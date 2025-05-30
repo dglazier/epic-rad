@@ -12,10 +12,6 @@
 #include <TBenchmark.h>
 #include <TCanvas.h>
 
-//with afterburner need slightly altered energies
-inline constexpr std::array<double,4>  rad::beams::InitBotComponents() {return {0,0,99.9339,0.938272};}
-inline constexpr std::array<double,4>  rad::beams::InitTopComponents() {return {0,0,-10.007,0.000510999};}
-
 void ProcessMCMatchedDetectorZ(){
    using namespace rad::names::data_type; //for Rec(), Truth()
 
@@ -25,7 +21,7 @@ void ProcessMCMatchedDetectorZ(){
   gBenchmark->Start("df");
   
   rad::config::ePICDetectorReaction epic{"events", "/home/dglazier/EIC/data/sim/jpac_z3900_10x100/AB_jpac_z3900_10x100_*_.recon.root"};
-  // epic.SetBeamsFromMC();
+  epic.SetBeamsFromMC();
 
  // rad::config::ePICDetectorReaction epic{"events", "/home/dglazier/EIC/data/sim/jpac_z3900_10x100/AB_jpac_z3900_10x100_0_.recon.root"};
   epic.AliasColumnsAndMatchWithMC();
@@ -33,8 +29,8 @@ void ProcessMCMatchedDetectorZ(){
    
   //Assign particles names and indices
   //indicing comes from ordering in hepmc file
-  epic.setBeamIonIndex(rad::beams::InitBotFix());
-  epic.setBeamElectronIndex(rad::beams::InitTopFix());
+  //epic.setBeamIonIndex(rad::beams::InitBotFix());
+  //epic.setBeamElectronIndex(rad::beams::InitTopFix());
   epic.setScatElectronIndex(4);
 
  
@@ -131,9 +127,9 @@ void ProcessMCMatchedDetectorZ(){
   histo.Create<TH1D,double>({"missPz","p_{z,miss}(e',Z)",105,0,105},{"MissPz_Meson"});
   histo.Create<TH1D,double>({"missTheta","#theta_{miss}(e',Z)",100,0,1},{"MissTheta_Meson"});
 
-  histo.Create<TH1D,float>({"EleP","p_{e-})",100,0,20},{"pmag[ele]"});
+  histo.Create<TH1D,double>({"EleP","p_{e-})",100,0,20},{"pmag[ele]"});
   histo.Create<TH1D,float>({"Ecal","Cluster Energy",100,0,10},{"clustersenergy[ele]"});
-  histo.Create<TH2D,float,float>({"EleP_v_Ecal","Electron momentum v Cluster Energy",100,0,10,100,0,20},{"pmag[ele]","clustersenergy[ele]"});
+  histo.Create<TH2D,double,float>({"EleP_v_Ecal","Electron momentum v Cluster Energy",100,0,10,100,0,20},{"pmag[ele]","clustersenergy[ele]"});
 
   gBenchmark->Start("processing");
   ///////////////////////////////////////////////////////////
@@ -150,6 +146,7 @@ void ProcessMCMatchedDetectorZ(){
   //save all histograms to file
   histo.File("MCMatchedDetectorZ_hists.root");
 
+  
   gBenchmark->Stop("df");
   gBenchmark->Print("df");
   

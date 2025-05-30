@@ -8,8 +8,8 @@
   This derived class is configured for ePIC files with fixed particle order. It also uses podio to link particles to their full detector reconstruction
 */
 #include "ePICReaction.h"
+#include "PodioMetadata.h"
 #include "RVecHelpers.h"
-#include "podio/CollectionIDTable.h"//podio
 #include <TFile.h>
 #include <TTree.h>
 
@@ -32,27 +32,12 @@ namespace rad{
 	//auto file = std::unique_ptr<TFile>{TFile::Open(fileNameGlob.data())};
 	TChain chain("podio_metadata");
 	chain.Add(fileNameGlob.data());
-	//	auto podio_metadata = file->Get<TTree>("podio_metadata");
-	podio::CollectionIDTable* tab=nullptr;
-	//	podio_metadata->SetBranchAddress( "events___idTable", &tab);
-	//podio_metadata->GetEntry(0);
-	chain.SetBranchAddress( "events___idTable", &tab);
-	chain.GetEntry(0);
 
-	//dont't want to do this with bare pointer, but no copy constructor
-	_idTable =tab ;
-	
+	_podio_meta = rad::epic::PodioMetadata(chain.GetListOfFiles()->At(0)->GetTitle());
       }
     ePICDetectorReaction(const std::string_view treeName, const std::vector<std::string> &filenames, const ROOT::RDF::ColumnNames_t&  columns ={} ) : ePICReaction{treeName,filenames,columns} {
-	//open file and copy podio table
-	auto file = std::unique_ptr<TFile>{TFile::Open(filenames[0].data())};
-	auto podio_metadata = file->Get<TTree>("podio_metadata");
-	podio::CollectionIDTable* tab=nullptr;
-	podio_metadata->SetBranchAddress( "events___idTable", &tab);
-	podio_metadata->GetEntry(0);
-
-	//dont't want to do this with bare pointer, but no copy constructor
-	_idTable =tab ;
+      //open file and copy podio table
+      _podio_meta = rad::epic::PodioMetadata(filenames[0].data());
 
       }
 
@@ -78,8 +63,7 @@ namespace rad{
 	ROOT::RVecU collIndices; //create indices for the given collection types
       
 	for(const auto& assoc_name:types){ //loop over the specified detector associations
-	  // cout<<assoc_name<<" "<<_idTable->collectionID(assoc_name).has_value()<<" "<<endl;
-	  if(_idTable->collectionID(assoc_name).has_value()==false){
+	  if(_podio_meta.Exists(assoc_name)==false){
 	    std::cerr<<"Warning : ePICDetectorReaction::AssociateObjects, no detector object "
 		     <<assoc_name<<" in podio_metadata. "<<std::endl;
 	    continue;
@@ -87,7 +71,7 @@ namespace rad{
 	  
 	  //save the collectionID value in indices
 	  //this allows us to define a local index for the collection
-	  collIndices.push_back(_idTable->collectionID(assoc_name).value());
+	  collIndices.push_back(_podio_meta.CollectionIDFor(assoc_name));
 	  std::cout<<"AssociateObjects "<<object<<" "<<assoc_name<<" "<<collIndices.back()<<std::endl;
 	}
       
@@ -146,6 +130,7 @@ namespace rad{
 	  TString assocName = Rec()+object+member;
 	  assocName.ReplaceAll(".","_");
 	  Define(assocName,CreateAssocVector,{mapName.Data(), collIdxsName,"_ReconstructedParticles_"+object+".index"});
+	  
 	  //reorder to match truth and rec if required
 	  if(rad::config::ColumnExists(Truth()+"match_id",CurrFrame()) == true ){
 	    RedefineExpr(std::string(assocName), std::string(Form("rad::helpers::Reorder(%s,%s,%s,%s)",assocName.Data(),(Rec()+"match_id").data(),(Truth()+"match_id").data(),(Truth()+"n").data())) );
@@ -169,9 +154,10 @@ namespace rad{
       // }
   
     private:
+      rad::epic::PodioMetadata _podio_meta;
       
       //  podio::CollectionIDTable _idTable; //to be cloned from podio_metadata:events___idTable
-      podio::CollectionIDTable *_idTable=nullptr; //to be cloned from podio_metadata:events___idTable, it has a deleted constructor so cannot use copy contructor
+      // podio::CollectionIDTable *_idTable=nullptr; //to be cloned from podio_metadata:events___idTable, it has a deleted constructor so cannot use copy contructor
       //std::shared_ptr<podio::CollectionIDTable> _idTable; //to be cloned from podio_metadata:events___idTable
       /**
        * Local index for particle associated collection IDs
