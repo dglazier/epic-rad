@@ -3,188 +3,97 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>epic-rad | ePIC Experiment Interface</title>
+  <title>ePIC-RAD | ePIC Experiment Interface</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Inter', sans-serif; background: #f5f7fa; }
     .rad-card { background: #fff; border: 1px solid #b5c3d7; border-radius: 1rem; box-shadow: 0 2px 10px #0a25400d; }
-    .diagram-box { border: 2px solid #24406e; border-radius: 0.75rem; padding: 1rem; background: #f7fafc; margin-bottom: 1.5rem; }
-    .diagram-title { font-weight: 600; color: #24406e; }
-    .diagram-arrow { font-size: 1.5rem; color: #24406e; text-align: center; }
-    .diagram-accent { color: #ffd166; font-weight: bold; }
-    code, pre { font-family: 'Fira Mono', 'Menlo', 'Monaco', 'Consolas', monospace; }
-    .class-label { font-weight: 700; color: #0a2540; background: #ffd16622; border-radius: 0.5rem; padding: 0.25rem 0.75rem; display: inline-block; margin-bottom: 0.25rem; }
-    .subclass-label { font-weight: 600; color: #24406e; background: #b5c3d755; border-radius: 0.5rem; padding: 0.2rem 0.5rem; display: inline-block; margin-bottom: 0.15rem; }
-    .note { background: #ffd16633; border-left: 4px solid #ffd166; padding: 0.75rem 1rem; border-radius: 0.5rem; margin: 1rem 0; }
+    .code-block { background: #1e293b; color: #e2e8f0; padding: 1.5rem; border-radius: 0.75rem; font-family: 'Menlo', 'Monaco', monospace; overflow-x: auto; font-size: 0.9em; }
     .section-title { font-size: 2rem; font-weight: bold; color: #0a2540; margin-bottom: 1rem; }
+    .badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; }
+    .badge-core { background: #bfdbfe; color: #1e3a8a; }
+    .badge-epic { background: #fef08a; color: #854d0e; }
   </style>
 </head>
 <body class="text-slate-700">
   <div class="max-w-6xl mx-auto p-4 sm:p-8">
-    <!-- Header -->
+    
     <header class="text-center mb-12">
-      <h1 class="text-4xl font-bold text-slate-900 tracking-tight">epic-rad: ePIC Experiment Interface</h1>
-      <p class="mt-2 text-lg text-slate-600">Specialized Analysis for ePIC Data, Built on Reaction Aware Dataframes</p>
+      <h1 class="text-4xl font-bold text-slate-900 tracking-tight">ePIC-RAD</h1>
+      <p class="mt-2 text-lg text-slate-600">Specialized Analysis Interface for the Electron-Ion Collider</p>
       
-      <!-- Doxygen Reference Guide for epic-rad -->
-      <a href="./reference/" target="_blank" class="inline-block mt-8 bg-[#ffd166] text-[#0a2540] font-semibold py-2 px-5 rounded-lg shadow hover:bg-[#ffb700] transition">
-	View epic-rad Class Reference (Doxygen)
-      </a>
-      <!-- epic-rad GitHub repo -->
-      <a href="https://github.com/dglazier/epic-rad" target="_blank" class="inline-block mt-4 bg-[#b5c3d7] text-[#0a2540] font-semibold py-2 px-5 rounded-lg shadow hover:bg-[#24406e] hover:text-white transition">
-	epic-rad GitHub Repository
-      </a>
-      <!-- epic-rad Interactive Pages -->
-      <a href="https://dglazier.github.io/epic-rad/" target="_blank" class="inline-block mt-4 bg-[#b5c3d7] text-[#0a2540] font-semibold py-2 px-5 rounded-lg shadow hover:bg-[#24406e] hover:text-white transition">
-	epic-rad Interactive Index Page
-      </a>
-
-      <!-- rad links -->
-      <a href="https://github.com/dglazier/rad" target="_blank" class="inline-block mt-4 bg-[#b5c3d7] text-[#0a2540] font-semibold py-2 px-5 rounded-lg shadow hover:bg-[#24406e] hover:text-white transition">
-	RAD GitHub Repository
-      </a>
-      <a href="https://dglazier.github.io/rad/" target="_blank" class="inline-block mt-4 bg-[#b5c3d7] text-[#0a2540] font-semibold py-2 px-5 rounded-lg shadow hover:bg-[#24406e] hover:text-white transition">
-	RAD Interactive Index Page
-      </a>
+      <div class="mt-8 space-x-4">
+        <a href="ePIC_User_Guide.html" class="inline-block bg-[#24406e] text-white font-semibold py-2 px-5 rounded-lg shadow hover:bg-[#1a3055] transition">ePIC User Guide</a>
+        <a href="https://dglazier.github.io/rad/" target="_blank" class="inline-block bg-[#e2e8f0] text-[#0a2540] font-semibold py-2 px-5 rounded-lg shadow hover:bg-[#cbd5e1] transition">Core RAD Docs</a>
+        <a href="./reference/" target="_blank" class="inline-block bg-[#ffd166] text-[#0a2540] font-semibold py-2 px-5 rounded-lg shadow hover:bg-[#ffb700] transition">Doxygen API</a>
+      </div>
     </header>
-    <!-- Core Concepts -->
+
     <section class="mb-16">
-      <h2 class="section-title text-center">Core Concepts</h2>
+      <h2 class="section-title text-center">The ePIC Implementation</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div class="rad-card p-6">
-          <h3 class="text-xl font-semibold mb-2 text-[#24406e]">Experiment-Specific Reaction Configuration</h3>
-          <p>
-            <span class="class-label">ePICReaction</span> is the core class for ePIC data analysis, inheriting from <b>ElectroIonReaction</b> in <b>rad</b>.
-            It provides streamlined setup for ePIC event files, particle assignment, and MC matching.
+          <h3 class="text-xl font-semibold mb-2 text-[#24406e]">Unified Reconstruction</h3>
+          <p class="mb-4">
+            ePIC data is distributed across multiple branches (Central Tracker, Roman Pots, ZDC). 
+            <span class="font-bold">ePIC-RAD</span> stitches these sources into a single, unified event structure.
           </p>
-          <ul class="list-disc pl-5 mt-2 text-slate-600">
-            <li>Handles both reconstructed and truth (MC) particle information in parallel</li>
-            <li>Supports resolution studies and truth/reco matching (optional, not available for real data)</li>
-            <li>Flexible particle definitions and kinematic calculations</li>
+          <ul class="list-disc pl-5 text-sm text-slate-600 space-y-1">
+            <li><span class="badge badge-epic">Central</span> ReconstructedParticles</li>
+            <li><span class="badge badge-epic">Forward</span> Roman Pots & ZDC</li>
+            <li><span class="badge badge-epic">Truth</span> MCParticles</li>
           </ul>
         </div>
         <div class="rad-card p-6">
-          <h3 class="text-xl font-semibold mb-2 text-[#24406e]">Detector-Level Association</h3>
-          <p>
-            <span class="subclass-label">ePICDetectorReaction</span> extends <span class="class-label">ePICReaction</span> to associate low-level detector objects (tracks, clusters) with particles.
+          <h3 class="text-xl font-semibold mb-2 text-[#24406e]">MC & Matching</h3>
+          <p class="mb-4">
+            Built-in handling for Monte Carlo truth matching across different detectors.
           </p>
-          <ul class="list-disc pl-5 mt-2 text-slate-600">
-            <li>Links calorimeter, tracker, and other detector info to reconstructed particles</li>
-            <li>Uses podio metadata for collection IDs and association logic</li>
-            <li>Critical for advanced analyses needing full detector context</li>
+          <ul class="list-disc pl-5 text-sm text-slate-600 space-y-1">
+            <li>Automatic beam energy determination from MC headers.</li>
+            <li>Merged <code>rec_match_id</code> across all detectors.</li>
+            <li>Generation of <code>rec_true_pid</code> for perfect-PID studies.</li>
           </ul>
-          <p class="mt-2"><b>MC Matching:</b> When enabled, truth-reco associations allow resolution and efficiency studies. For real data, rely on particle identification and reconstructed info only.</p>
         </div>
       </div>
     </section>
 
-    <!-- Class Structure & Workflow Diagram -->
     <section class="mb-16">
-      <h2 class="section-title text-center">Code Structure & Workflow</h2>
-      <div class="diagram-box">
-        <div class="diagram-title mb-2">Class Hierarchy & Usage Flow</div>
-        <div class="flex flex-col items-center">
-          <span class="class-label">ElectroIonReaction <span class="text-slate-500 text-sm">(from rad)</span></span>
-          <span class="diagram-arrow">&#8595;</span>
-          <span class="class-label">ePICReaction <span class="text-slate-500 text-sm">(event-level, ePIC-specific)</span></span>
-          <span class="diagram-arrow">&#8595;</span>
-          <span class="class-label">ePICDetectorReaction <span class="text-slate-500 text-sm">(detector-level, associations)</span></span>
-          <span class="diagram-arrow">&#8595;</span>
-          <span class="subclass-label">Analysis Modules</span>
-          <span class="text-xs text-slate-500 text-center">ParticleCreator, Histogrammer, Utilities, MC Matching</span>
-        </div>
-        <div class="note mt-4">
-          <strong>Note:</strong> For MC studies, enable truth-reco matching to create resolution and efficiency columns. For real data, use particle identification and reconstructed info only.
-        </div>
-      </div>
-      <div class="diagram-box">
-        <div class="diagram-title mb-2">Typical Analysis Workflow</div>
-        <ul class="list-decimal pl-6 text-slate-700">
-          <li><b>Choose interface:</b> Use <span class="class-label">ePICReaction</span> for event-level, or <span class="class-label">ePICDetectorReaction</span> for full detector info</li>
-          <li><b>Configure analysis:</b> Assign particles, set up MC matching if available</li>
-          <li><b>Associate detector info:</b> Use <code>AssociateTracks()</code> and <code>AssociateClusters()</code> for calorimeter/tracker links</li>
-          <li><b>Define analysis steps:</b> Kinematics, selection, histogramming, resolution studies</li>
-          <li><b>Run interactively:</b> With ROOT (e.g. <code>root examples/ProcessMCMatchedY.C</code>)</li>
-        </ul>
-      </div>
-    </section>
-
-    <!-- Example Usage Section -->
-    <section class="mb-16">
-      <h2 class="section-title text-center">Example Usage</h2>
-      <div class="rad-card p-6 mb-8">
-        <h3 class="text-lg font-semibold mb-2 text-[#24406e]">Event-Level Analysis (ProcessMCMatchedY.C)</h3>
-        <pre><code>// Setup for event-level analysis with MC matching
+      <h2 class="section-title text-center">Analysis Example</h2>
+      <div class="rad-card p-6">
+        <div class="code-block">
 #include "ePICReaction.h"
-#include "ParticleCreator.h"
-#include "Indicing.h"
-#include "Histogrammer.h"
-#include "BasicKinematicsRDF.h"
-#include "ReactionKinematicsRDF.h"
-#include <TBenchmark.h>
-#include <TCanvas.h>
+#include "KinematicsProcessor.h"
 
-void ProcessMCMatchedY(){
-  using namespace rad::names::data_type; // for Rec(), Truth()
-  gBenchmark->Start("df total");
+void ProcessY4260() {
+  // 1. Initialize ePIC Data Source
+  rad::epic::ePICReaction reaction("events", "data/*.root");
+  
+  // 2. Setup Beams & Matching (Crucial for MC)
+  reaction.SetBeamsFromMC(0, 1); 
+  reaction.SetupMatching(); 
 
-  rad::config::ePICReaction epic{"events","datafile.root"};
-  epic.SetBeamsFromMC(); // for MC files
-  epic.AliasColumnsAndMatchWithMC();
+  // 3. Define Analysis Candidates
+  // Note: "rec_pid" works for Central, RP, and ZDC tracks uniformly
+  const int Role_ScatEle = 2;
+  reaction.SetParticleCandidates("ele", Role_ScatEle, rad::index::FilterIndices(11), {"rec_pid"});
+  reaction.SetParticleCandidates("p",   3, rad::index::FilterIndices(2212), {"rec_pid"});
 
-  // Assign particles, calculate kinematics, histogram
+  // 4. Configure Kinematics (Standard RAD Workflow)
+  rad::KinematicsProcessor kine(&reaction, "rec_");
+  kine.Creator().Sum("Jpsi", {{"ele", "pos"}}); 
+  kine.Init();
+
+  // 5. Run & Save
+  reaction.Snapshot("output.root");
 }
-// Run with: root examples/ProcessMCMatchedY.C
-        </code></pre>
-      </div>
-      <div class="rad-card p-6">
-        <h3 class="text-lg font-semibold mb-2 text-[#24406e]">Detector-Level Analysis (ProcessMCMatched_DVCS.C)</h3>
-        <pre><code>// Setup for advanced detector association
-#include "ePICDetectorReaction.h"
-#include "ParticleCreator.h"
-#include "Indicing.h"
-#include "Histogrammer.h"
-
-void ProcessMCMatched_DVCS(){
-  using namespace rad::names::data_type;
-  rad::config::ePICDetectorReaction epic{"events", "datafile.root"};
-  epic.SetBeamsFromMC();
-  epic.AliasColumnsAndMatchWithMC();
-
-  // Associate calorimeter info
-  epic.AssociateClusters({"EcalBarrelClusters","EcalEndcapNClusters"}, {"energy"});
-  // Associate tracker info
-  epic.AssociateTracks({"TaggerTrackerTracks"}, {"momentum.x"});
-  // Continue analysis...
-}
-// Run with: root examples/ProcessMCMatched_DVCS.C
-        </code></pre>
-        <p class="mt-4 text-slate-600">See <a href="https://github.com/dglazier/epic-rad/tree/main/examples" class="underline">examples directory</a> for more scripts.</p>
+        </div>
       </div>
     </section>
 
-    <!-- Build & Usage Section -->
-    <section class="mb-16">
-      <h2 class="section-title text-center">Build & Usage</h2>
-      <div class="rad-card p-6">
-        <h3 class="text-lg font-semibold text-[#24406e] mb-2">Quick Install</h3>
-        <pre class="bg-slate-800 text-white p-4 rounded text-sm overflow-x-auto"><code>git clone https://github.com/dglazier/epic-rad
-export ROOT_INCLUDE_PATH=/path/to/epic-rad/include:$ROOT_INCLUDE_PATH
-# Make sure rad is also available in your include path
-export ROOT_INCLUDE_PATH=/path/to/rad/include:$ROOT_INCLUDE_PATH
-</code></pre>
-        <h3 class="text-lg font-semibold text-[#24406e] mt-6 mb-2">Interactive Analysis</h3>
-        <pre class="bg-slate-800 text-white p-4 rounded text-sm overflow-x-auto"><code>root examples/ProcessMCMatchedY.C
-root examples/ProcessMCMatched_DVCS.C
-</code></pre>
-        <p class="mt-2 text-slate-600">No build required (header-only). Analysis is performed interactively in ROOT using C++ scripts.</p>
-      </div>
-    </section>
-
-    <!-- Footer -->
     <footer class="text-center p-8 border-t border-slate-200 mt-12">
-      <p class="text-slate-500">epic-rad &mdash; ePIC Experiment Data Analysis Toolkit</p>
+      <p class="text-slate-500">ePIC-RAD &mdash; Part of the RAD Framework Ecosystem</p>
       <p class="text-slate-400 text-sm mt-2">Project by <a href="https://github.com/dglazier/epic-rad" class="underline">dglazier</a> &amp; collaborators</p>
     </footer>
   </div>
