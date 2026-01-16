@@ -122,7 +122,7 @@ namespace rad{
       }
 
       RVecS FilterNames(std::string sub_string){
-	return rad::utils::filterStrings(_names,sub_string);
+	return rad::util::filterStrings(_names,sub_string);
       }
     private:
       

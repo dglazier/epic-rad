@@ -1,5 +1,4 @@
 #pragma once
-#include "Beams.h"
 #include <Math/VectorUtil.h>
 #include <Math/RotationX.h>
 #include <Math/RotationY.h>
