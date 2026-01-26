@@ -72,6 +72,7 @@ namespace rad {
 
     template <typename TReaction>
     inline void ePICSource<TReaction>::Process(TReaction* reaction, rad::ParticleInjector& injector, bool truthMatched) {
+
       if (!reaction->OriginalColumnExists(_branch + ".momentum.x")) return;
 
       std::string dnw = DoNotWriteTag();

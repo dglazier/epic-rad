@@ -55,6 +55,12 @@ namespace rad {
        */
       ePICReaction(ROOT::RDataFrame rdf);
 
+      /** * @brief Constructor for existing RDataFrame. 
+       * @note Metadata loading is skipped here; Detector Associations will throw an error if used.
+       * @param rdf Existing RDataFrame object.
+       */
+      ePICReaction(ROOT::RDF::RNode rdf);
+
       // =================================================================================
       // Setup Methods
       // =================================================================================
@@ -182,8 +188,8 @@ namespace rad {
       enum DetID { BEAM=0, CENTRAL=1, RP=2, ZDC=3, B0=4 };
       bool _truthMatched = false;   
       bool _beamsCorrected = false; 
-      Int_t _idxBeamEle = -1;       
-      Int_t _idxBeamIon = -1;       
+      Int_t _idxBeamEle = 0;       
+      Int_t _idxBeamIon = 1;       
       std::shared_ptr<rad::podio::PodioMetadata> _podioMetadata;
     }; 
 
@@ -211,6 +217,8 @@ namespace rad {
 
     inline ePICReaction::ePICReaction(ROOT::RDataFrame rdf) : ElectroIonReaction{rdf} {}
 
+    inline ePICReaction::ePICReaction(ROOT::RDF::RNode rdf) : ElectroIonReaction{rdf} {}
+
     inline void ePICReaction::InitMetadata(const std::string& filename) {
         try { _podioMetadata = std::make_shared<rad::podio::PodioMetadata>(filename); } 
         catch (const std::exception& e) { std::cerr << "[ePICReaction] Warning: Failed to load metadata: " << e.what() << std::endl; }
@@ -229,7 +237,7 @@ namespace rad {
          return fullType; // Fallback (shouldn't happen for PODIO vectors)
     }
 
-    // --- Association Logic (FIXED) ---
+    // --- Association Logic ---
     inline void ePICReaction::DefineAssociation(const std::string& objName, 
                                                 const std::vector<std::string>& collectionNames, 
                                                 const std::string& memberName) 
@@ -310,18 +318,55 @@ namespace rad {
 
     // --- Standard Methods ---
     inline void ePICReaction::SetupReconstructed(Bool_t isEnd) {
-        AddType(Rec()); 
+        AddType(Rec());
+
+	// 1. DEFINE BEAM COLUMNS
+        // This triggers ElectroIonReaction to create "rec_BeamEle_px" etc.
+        // derived either from MC (per-event) or Fixed values, based on your settings.
+        DefineBeamComponents(Rec());
+	SetBeamElectronIndex(_idxBeamEle,Rec());
+	SetBeamIonIndex(_idxBeamIon,Rec());
+	//create source injector
         rad::ParticleInjector injector(this);
         
         // Define standard particle columns
         std::vector<std::string> suffixes = {"double px", "double py", "double pz", "double m", "int pid", "short charge", "int det_id"};
         if(_truthMatched) { suffixes.push_back("int match_id"); suffixes.push_back("int true_pid"); }
+	
         injector.DefineParticleInfo(suffixes);
 
-        // Register Beams
-        SetBeamElectronIndex(_idxBeamEle, Rec()); SetBeamIonIndex(_idxBeamIon, Rec());
-        DefineBeamComponents(); 
+ 	// INJECT BEAMS FIRST (Indices 0 and 1)
+	std::string bEle = Rec() + consts::BeamEle() + "_src_";
+        std::string bIon = Rec() + consts::BeamIon() + "_src_";
 
+         // Prepare Column Lists
+        std::vector<std::string> ele_cols = {
+            bEle + consts::NamePx(), bEle + consts::NamePy(), bEle + consts::NamePz(), 
+            bEle + consts::NameM(),  bEle + consts::NamePid(), 
+            "ROOT::RVecI{-1}", "ROOT::RVecI{0}" // Charge=-1 (Electron), DetID=0
+        };
+
+        std::vector<std::string> ion_cols = {
+            bIon + consts::NamePx(), bIon + consts::NamePy(), bIon + consts::NamePz(), 
+            bIon + consts::NameM(),  bIon + consts::NamePid(), 
+            "ROOT::RVecI{1}", "ROOT::RVecI{0}" // Charge=1 (Proton/Ion), DetID=0
+        };
+
+        // Handle Truth Matching Columns for Beams
+        if(_truthMatched) {
+            // Electron Beam: Matches Truth Index 0
+            ele_cols.push_back("rad::Indices_t{0}"); 
+            ele_cols.push_back(bEle + consts::NamePid()); // True PID is same as Rec PID
+
+            // Ion Beam: Matches Truth Index 1
+            ion_cols.push_back("rad::Indices_t{1}");
+            ion_cols.push_back(bIon + consts::NamePid()); // True PID is same as Rec PID
+        }
+
+        // Add to Injector
+        injector.AddSource(Rec(), ele_cols);
+        injector.AddSource(Rec(), ion_cols);
+ 
         // Inject Detectors via ePICSource Factory
         using Source = ePICSource<ePICReaction>;
         
@@ -339,25 +384,52 @@ namespace rad {
 
         injector.CreateUnifiedVectors();
         util::CountParticles(this, Rec());
-        if (isEnd) { DefineBeamElectron(); DefineBeamIon(); }
+        if (isEnd) {
+	  
+	}
     }
 
     inline void ePICReaction::SetupTruth(Bool_t isEnd) {
         AddType(Truth());
-        SetBeamElectronIndex(_idxBeamEle, Truth()); SetBeamIonIndex(_idxBeamIon, Truth());
-        
+	
+	// 1. DEFINE BEAM COLUMNS (Truth Version)
+        DefineBeamComponents(Truth());
+      	SetBeamElectronIndex(_idxBeamEle,Truth());
+	SetBeamIonIndex(_idxBeamIon,Truth());
+
         rad::ParticleInjector injector(this);
         injector.DefineParticleInfo({"double px", "double py", "double pz", "double m", "int pid", "int genStat", "int charge"});
-        
-        // Filter: Status 1 (Stable) or 4 (Beam)
+	
+	// INJECT BEAMS FIRST
+	std::string bEle = Truth() + consts::BeamEle() + "_src_";
+        std::string bIon = Truth() + consts::BeamIon() + "_src_";
+	
+         // Electron Beam (Index 0)
+        injector.AddSource(Truth(), {
+            bEle + consts::NamePx(), bEle + consts::NamePy(), bEle + consts::NamePz(), 
+            bEle + consts::NameM(),  bEle + consts::NamePid(), 
+            "ROOT::RVecI{4}", "ROOT::RVecI{-1}" // Status 4 (Beam), Charge -1
+        });
+
+        // Ion Beam (Index 1)
+        injector.AddSource(Truth(), {
+            bIon + consts::NamePx(), bIon + consts::NamePy(), bIon + consts::NamePz(), 
+            bIon + consts::NameM(),  bIon + consts::NamePid(), 
+            "ROOT::RVecI{4}", "ROOT::RVecI{1}" // Status 4 (Beam), Charge +1
+        });
+	
+        // Filter: Status 1 (Stable) 
         injector.AddSource(Truth(), {
           "MCParticles.momentum.x", "MCParticles.momentum.y", "MCParticles.momentum.z",
           "MCParticles.mass", "MCParticles.PDG", "MCParticles.generatorStatus", "MCParticles.charge"
-        }, "MCParticles.generatorStatus==1||MCParticles.generatorStatus==4"); 
+        }, "MCParticles.generatorStatus==1"); 
+	// }, "MCParticles.generatorStatus==1||MCParticles.generatorStatus==4"); 
         
         injector.CreateUnifiedVectors();
         util::CountParticles(this, Truth());
-        if (isEnd) { DefineBeamElectron(); DefineBeamIon(); }
+        if (isEnd) {
+
+	}
     }
 
     inline void ePICReaction::SetupMatching(Bool_t isEnd) {
@@ -376,12 +448,12 @@ namespace rad {
             }, {"ReconstructedParticleAssociations.recID", "ReconstructedParticleAssociations.simID", "ReconstructedParticles.PDG"}
         );
         SetupReconstructed(kFALSE); SetupTruth(kFALSE);
+
     }
 
     inline void ePICReaction::SetBeamsFromMC(UInt_t iel, UInt_t iion, Long64_t nRows) {
         _useBeamsFromMC = true;
-        _idxBeamEle = iel; _idxBeamIon = iion;
-        
+       
         // Heuristic: Scan first nRows to find average beam energy
         auto nthreads = ROOT::GetThreadPoolSize();
         if (nthreads) ROOT::DisableImplicitMT(); // Disable MT for simple range scan
