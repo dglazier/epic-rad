@@ -1,10 +1,7 @@
-#include "CommonDefines.h"
+#include "AnalysisManager.h"
 #include "ePICReaction.h"
 #include "KinematicsProcElectro.h"
-#include "KineCalculation.h"
-#include "Indicing.h"
 #include "ElectronScatterKinematics.h"
-#include "BasicKinematicsRDF.h"
 #include <TBenchmark.h>
 
 /**
@@ -21,10 +18,19 @@ void ProcessRecTruthYCombi() {
 
   gBenchmark->Start("df");
 
+  using Reaction = epic::ePICReaction;
+  using Processor = KinematicsProcElectro;
   // =================================================================================
   // 1. SETUP & MATCHING
   // =================================================================================
-  epic::ePICReaction rad_df{"events", "/home/dglazier/EIC/data/Y4260/jpac_y4260_18_275_10day_*_recon.root"};
+  AnalysisManager<Reaction,Processor>  mgr{
+    "Y4260",
+    "events",
+    "/home/dglazier/EIC/data/Y4260/jpac_y4260_18_275_10day_*_recon.root"};
+
+  mgr.SetOutputDir("output");
+  auto& rad_df = mgr.Reaction();
+ 
   rad_df.SetBeamsFromMC(0, 1); 
   rad_df.SetupMatching(); 
 
@@ -40,11 +46,12 @@ void ProcessRecTruthYCombi() {
   rad_df.SetParticleCandidates("pos", Role_DecayPos, rad::index::FilterIndices(-11), {"rec_true_pid"}); 
   rad_df.SetParticleCandidates("pip", Role_PiP, rad::index::FilterIndices(211),  {"rec_true_pid"}); 
   rad_df.SetParticleCandidates("pim", Role_PiM, rad::index::FilterIndices(-211), {"rec_true_pid"}); 
-  rad_df.SetParticleCandidates("recoil", Role_Recoil, rad::index::FilterIndices(2212), {"rec_true_pid"}); 
+  rad_df.SetParticleCandidates("p", Role_Recoil, rad::index::FilterIndices(2212), {"rec_true_pid"}); 
 
   
   rad_df.MakeCombinations();
-  rad_df.DefineTrueMatchedCombi("rec_match_id", Rec());
+
+  mgr.SetTypes(Rec(),Truth());
 
   // =================================================================================
   // 2. KINEMATICS CONFIGURATION (Master: DETECTED Recoil)
@@ -52,69 +59,97 @@ void ProcessRecTruthYCombi() {
   // We start with the topology that explicitly uses the "recoil" proton.
   // This ensures "recoil" is mapped naturally without needing RequireParticle.
   
-  KinematicsProcElectro kine_det_rec(&rad_df, Rec());
+ // [A] SHARED KINEMATICS (Topology)
+  // Applied to both Rec and Truth streams. Defines the decay chain.
+  auto topology_recipe = [](Processor& p) {
+    using namespace consts;
+    // 1. Reconstruct J/psi -> e+ e-
+    // A. Topological Construction
+    p.Creator().Sum("Jpsi", {{"ele", "pos"}});       
+    p.Creator().Sum("TwoPi", {{"pip", "pim"}});       
+    p.Creator().Sum("Y",    {{"Jpsi", "TwoPi"}});
+    //p.Creator().Diff("Miss",    {{BeamEle(),BeamIon()},{"Jpsi", "TwoPi"}});
+    p.Creator().Diff("Miss",    {{BeamEle(),BeamIon()},{"Jpsi", "TwoPi","p"}});
+  
+    p.SetMesonParticles({"Jpsi","TwoPi"});
+    p.SetBaryonParticles({"p"});
+     //p.SetBaryonParticles({"Miss"});
+    
+    // 3. Calculate Invariant Masses
+    p.Mass("MassJ",     {"ele","pos"});             
+    //    p.Mass("MassJ",     {"Jpsi"});//fix mass in postmodifer             
+    p.Mass("MassTwoPi",     {"TwoPi"});             
+    p.Mass("MassY",     {"Y"});             
+    p.Mass2("MissMass2",     {"Miss"});             
+
+    p.Q2();
+    
+    //4. Calculate Mandelstam t (requires beam definition)
+    p.RegisterCalc("tb", rad::physics::TBot);
+    p.RegisterCalc("DeltaPhiYxP", rad::DeltaPhi,{{"Y","p"}});
+    
+    p.ParticleTheta({"scat_ele","Y"});
+    p.ParticlePhi({"scat_ele","Y"});
+    p.ParticleP({"scat_ele","Y"});
+    
+  };
+
+  // [B] REC-SPECIFIC CORRECTIONS
+  // Applied only to Rec stream. Corrects electron momentum using ECal energy.
+  auto correction_recipe = [](KinematicsProcessor& p) {
+    using namespace consts;
+    p.PreModifier().FixMass(ScatEle(), M_ele());
+    p.PreModifier().FixMass("ele", M_ele());
+    p.PreModifier().FixMass("pos", M_ele());
+    p.PreModifier().FixMass("pip", M_pi());
+    p.PreModifier().FixMass("pim", M_pi());
+    p.PreModifier().FixMass("p", M_pro());
+
+    //Fix reconstructed Jpsi mass after it is calculted
+    p.PostModifier().FixMass("Jpsi", M_Jpsi());
+
+    
+  };
+  
+  // [C] SELECTION CUTS
+  // Applied to Rec stream (Primary). Determines which combinations are saved.
+  // Can use variables defined in kinematics recipe
+  auto selection_recipe = [](PhysicsSelection& s) {
+    // Wide window for Y(4260)
+    s.AddCutRange("Y_mass_cut",    "MassY", 3.5, 4.5); 
+    // Loose cut for J/psi
+    s.AddCutMin("Jpsi_mass_cut", "MassJ",     2.8);          
+  };
+  
+  // [C] HISTOGRAMS
+  // Shared definitions for Rec and Truth.
+  auto histogram_recipe = [](histo::Histogrammer& h) {
+    h.Create("hQ2",     "Q^{2}; [GeV]", 100, 0, 1.0, "Q2");
+    h.Create("hMassJ",     "Invariant Mass e+e-;  [GeV]", 100, 2.0, 4.0, "MassJ");
+    h.Create("hMassTwoPi",     "Invariant Mass 2#pi; [GeV]", 100, 0, 2, "MassTwoPi");
+    h.Create("hMassY",     "Invariant Mass J/#psi 2#pi; [GeV]", 100, 2.0, 6.0, "MassY");
+    h.Create("hMissMass2",     "Missing Mass squared; [GeV]", 1000, -50, 50, "MissMass2");
+  };
  
-  // A. Topological Construction
-  kine_det_rec.Creator().Sum("Jpsi", {{"ele", "pos"}});       
-  kine_det_rec.Creator().Sum("Y",    {{"Jpsi", "pip", "pim"}});
-  
-  //Also define the missing mass variable here so it's available for plotting/cuts
-  kine_det_rec.Creator().Diff("recoil_miss", 
-         {{consts::BeamIon(), consts::BeamEle()},  
-          {"Y", consts::ScatEle()}}             
-  );
+  // Apply Topology to ALL streams
+  mgr.ConfigureKinematics(topology_recipe);
 
-  // B. Physics Grouping (Master = Detected)
-  kine_det_rec.SetMesonParticles({"Y"});
-  kine_det_rec.SetBaryonParticles({"recoil"}); // Uses detected proton
+  // Apply Corrections to REC stream ONLY
+  mgr.ConfigureKinematics(Rec(), correction_recipe);
 
-  // C. Calculations
-  kine_det_rec.Mass("MassMeson", {"Y"});          
-  kine_det_rec.Mass("MassMiss", {"recoil_miss"});
-  kine_det_rec.Q2();
-  
-  // Register 't' calculation (using detected 'recoil')
-  kine_det_rec.RegisterCalc("tb", rad::physics::TBot); 
+  // Apply Cuts to REC stream ONLY (Truth usually saved without cuts or with wider cuts)
+  mgr.ConfigureSelection(Rec(), selection_recipe);
 
-  // =================================================================================
-  // 3. CLONING PHYSICS STREAMS
-  // =================================================================================
+  // Apply Histograms to ALL streams
+  mgr.ConfigureHistograms(histogram_recipe);
 
-  // Stream 2: Detected Recoil (Truth)
-  // Inherits "recoil" grouping and "t_det" calculation.
-  auto kine_det_tru = kine_det_rec.CloneForType(Truth());
+  // Produce the Flat TTree (Merges Rec + Truth columns)
+  // Filename: output_y4260/Y4260_Analysis_Tree.root
+  mgr.Snapshot({consts::TruthMatchedCombi()});//currently need to add isTruth branch
 
-  // Stream 3: Missing Recoil (Rec) - [Linked Clone]
-  // We CloneLinked to create a new hypothesis on the same data.
-  // Suffix "_miss" ensures we get unique columns like "rec_t_miss".
-   auto kine_miss_rec = kine_det_rec.CloneLinked("_miss");
-  
-  // Override: Use the missing mass particle instead of detected recoil
-  kine_miss_rec->SetBaryonParticles({"recoil_miss"}); 
-  
-  // Stream 4: Missing Recoil (Truth)
-  // Clone from the Missing Rec stream to inherit the correct grouping.
-  auto kine_miss_tru = kine_miss_rec->CloneForType(Truth());
-
-  // =================================================================================
-  // 4. EXECUTION
-  // =================================================================================
-  
-  // Initializing the Master (kine_det_rec) triggers the entire chain.
-  kine_det_rec.Init(); 
-
-  gBenchmark->Start("snapshot");
-  
-  // File will contain:
-  // - rec_t_det, tru_t_det (from Master & Stream 2)
-  // - rec_t, tru_t (from Stream 3 & 4)
-  rad_df.Snapshot("ePIC_RecTruth_Y4260_Full.root");
-  
-  gBenchmark->Stop("snapshot");
-  gBenchmark->Print("snapshot");
-
-  // Debug Maps
-  std::cout << "\n--- Master Map (Rec Detected) ---" << std::endl;
-  kine_det_rec.PrintReactionMap();
-  
+ 
+  gBenchmark->Start("analysis");
+  mgr.Run();
+  gBenchmark->Stop("analysis");
+  gBenchmark->Print("analysis");
  }

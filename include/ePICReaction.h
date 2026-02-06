@@ -47,7 +47,7 @@ namespace rad {
        * @param filenames Vector of file paths.
        * @param columns Optional list of columns to read.
        */
-      ePICReaction(const std::string_view treeName, const std::vector<std::string>& filenames, const ROOT::RDF::ColumnNames_t& columns ={} );
+      ePICReaction(const std::string_view treeName, const ROOT::RVec<std::string>& filenames, const ROOT::RDF::ColumnNames_t& columns ={} );
       
       /** * @brief Constructor for existing RDataFrame. 
        * @note Metadata loading is skipped here; Detector Associations will throw an error if used.
@@ -97,7 +97,7 @@ namespace rad {
        * @param memberName The leaf member to extract (e.g. "energy", "chi2").
        */
       void DefineAssociation(const std::string& objName, 
-                             const std::vector<std::string>& collectionNames, 
+                             const ROOT::RVec<std::string>& collectionNames, 
                              const std::string& memberName);
 
       // --- Projection API (Overloaded) ---
@@ -209,7 +209,7 @@ namespace rad {
         }
     }
 
-    inline ePICReaction::ePICReaction(const std::string_view treeName, const std::vector<std::string>& filenames, const ROOT::RDF::ColumnNames_t& columns) 
+    inline ePICReaction::ePICReaction(const std::string_view treeName, const ROOT::RVec<std::string>& filenames, const ROOT::RDF::ColumnNames_t& columns) 
       : ElectroIonReaction{treeName, filenames, columns} 
     {
         if(!filenames.empty()) InitMetadata(filenames[0]);
@@ -239,7 +239,7 @@ namespace rad {
 
     // --- Association Logic ---
     inline void ePICReaction::DefineAssociation(const std::string& objName, 
-                                                const std::vector<std::string>& collectionNames, 
+                                                const ROOT::RVec<std::string>& collectionNames, 
                                                 const std::string& memberName) 
     {
       if(!_podioMetadata) throw std::runtime_error("DefineAssociation requires PodioMetadata.");
@@ -247,7 +247,7 @@ namespace rad {
 
       // 1. Resolve Collections
       // We filter the requested collections against what is actually in the file
-      std::vector<std::string> validNames;
+      ROOT::RVec<std::string> validNames;
       ROOT::RVecU validIDs;
       for(const auto& name : collectionNames) {
           if(_podioMetadata->Exists(name)) {
@@ -266,7 +266,7 @@ namespace rad {
       }
       
       // 3. Prepare Inputs
-      std::vector<std::string> leafCols;
+      ROOT::RVec<std::string> leafCols;
       for(const auto& name : validNames) leafCols.push_back(name + "." + memberName);
       
       // We extract "float" from "RVec<float>" to template CreateAssociation correctly.
@@ -330,7 +330,7 @@ namespace rad {
         rad::ParticleInjector injector(this);
         
         // Define standard particle columns
-        std::vector<std::string> suffixes = {"double px", "double py", "double pz", "double m", "int pid", "short charge", "int det_id"};
+        ROOT::RVec<std::string> suffixes = {"double px", "double py", "double pz", "double m", "int pid", "short charge", "int det_id"};
         if(_truthMatched) { suffixes.push_back("int match_id"); suffixes.push_back("int true_pid"); }
 	
         injector.DefineParticleInfo(suffixes);
@@ -340,13 +340,13 @@ namespace rad {
         std::string bIon = Rec() + consts::BeamIon() + "_src_";
 
          // Prepare Column Lists
-        std::vector<std::string> ele_cols = {
+        ROOT::RVec<std::string> ele_cols = {
             bEle + consts::NamePx(), bEle + consts::NamePy(), bEle + consts::NamePz(), 
             bEle + consts::NameM(),  bEle + consts::NamePid(), 
             "ROOT::RVecI{-1}", "ROOT::RVecI{0}" // Charge=-1 (Electron), DetID=0
         };
 
-        std::vector<std::string> ion_cols = {
+        ROOT::RVec<std::string> ion_cols = {
             bIon + consts::NamePx(), bIon + consts::NamePy(), bIon + consts::NamePz(), 
             bIon + consts::NameM(),  bIon + consts::NamePid(), 
             "ROOT::RVecI{1}", "ROOT::RVecI{0}" // Charge=1 (Proton/Ion), DetID=0
@@ -458,7 +458,7 @@ namespace rad {
         auto nthreads = ROOT::GetThreadPoolSize();
         if (nthreads) ROOT::DisableImplicitMT(); // Disable MT for simple range scan
         
-        auto tempframe = GetFileNames().empty() ? ROOT::RDataFrame{GetTreeName(), GetFileName()} : ROOT::RDataFrame{GetTreeName(), GetFileNames()};
+        auto tempframe = GetFileNames().empty() ? ROOT::RDataFrame{GetTreeName(), GetFileName()} : ROOT::RDataFrame{GetTreeName(), utils::as_stdvector(GetFileNames())};
         auto beamdf = tempframe.Range(nRows).Define("emean", Form("MCParticles.momentum.z[%d]", iel)).Define("pzmean", Form("MCParticles.momentum.z[%d]", iion)).Define("pxmean", Form("MCParticles.momentum.x[%d]", iion));
         
         auto pze = beamdf.Mean("emean"); 
@@ -543,7 +543,7 @@ namespace rad {
 //       ePICReaction(const std::string_view treeName, const std::string_view fileNameGlob, const ROOT::RDF::ColumnNames_t& columns ={} );
       
 //       /** * @brief Constructor for a vector of filenames. */
-//       ePICReaction(const std::string_view treeName, const std::vector<std::string>& filenames, const ROOT::RDF::ColumnNames_t& columns ={} );
+//       ePICReaction(const std::string_view treeName, const ROOT::RVec<std::string>& filenames, const ROOT::RDF::ColumnNames_t& columns ={} );
       
 //       /** * @brief Constructor for existing RDataFrame (No Metadata support). */
 //       ePICReaction(ROOT::RDataFrame rdf);
@@ -570,7 +570,7 @@ namespace rad {
 //        * @param memberName The leaf to extract (e.g. "energy").
 //        */
 //       void DefineAssociation(const std::string& objName, 
-//                              const std::vector<std::string>& collectionNames, 
+//                              const ROOT::RVec<std::string>& collectionNames, 
 //                              const std::string& memberName);
 
 //       /**
@@ -627,7 +627,7 @@ namespace rad {
 //         }
 //     }
 
-//     inline ePICReaction::ePICReaction(const std::string_view treeName, const std::vector<std::string>& filenames, const ROOT::RDF::ColumnNames_t& columns) 
+//     inline ePICReaction::ePICReaction(const std::string_view treeName, const ROOT::RVec<std::string>& filenames, const ROOT::RDF::ColumnNames_t& columns) 
 //       : ElectroIonReaction{treeName, filenames, columns} 
 //     {
 //         if(!filenames.empty()) InitMetadata(filenames[0]);
@@ -646,7 +646,7 @@ namespace rad {
 
 //     // --- Association Logic ---
 //     inline void ePICReaction::DefineAssociation(const std::string& objName, 
-//                                                 const std::vector<std::string>& collectionNames, 
+//                                                 const ROOT::RVec<std::string>& collectionNames, 
 //                                                 const std::string& memberName) 
 //     {
 //       if(!_podioMetadata) {
@@ -655,7 +655,7 @@ namespace rad {
 //       if (collectionNames.empty()) return;
 
 //       // 1. Resolve Collection IDs
-//       std::vector<std::string> validNames;
+//       ROOT::RVec<std::string> validNames;
 //       ROOT::RVecU validIDs;
       
 //       for(const auto& name : collectionNames) {
@@ -680,7 +680,7 @@ namespace rad {
 //       }
       
 //       // 3. Prepare Inputs
-//       std::vector<std::string> leafCols;
+//       ROOT::RVec<std::string> leafCols;
 //       for(const auto& name : validNames) leafCols.push_back(name + "." + memberName);
       
 //       std::string packName = Rec() + objName + "_" + memberName + "_pack" + DoNotWriteTag();
@@ -728,7 +728,7 @@ namespace rad {
 //         AddType(Rec()); 
 //         rad::ParticleInjector injector(this);
         
-//         std::vector<std::string> suffixes = {"double px", "double py", "double pz", "double m", "int pid", "short charge", "int det_id"};
+//         ROOT::RVec<std::string> suffixes = {"double px", "double py", "double pz", "double m", "int pid", "short charge", "int det_id"};
 //         if(_truthMatched) { suffixes.push_back("int match_id"); suffixes.push_back("int true_pid"); }
 //         injector.DefineParticleInfo(suffixes);
 
