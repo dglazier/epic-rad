@@ -141,9 +141,6 @@ void ProcessRecTruthYCombi() {
   mgr.ConfigureSelection(Rec(), selection_recipe);
 
 
-  // Print diagnostics BEFORE running expensive event loop
-  std::cout << "\n=== CHECKING ANALYSIS SETUP ===\n" << std::endl;
-  mgr.PrintDiagnostics();
   
   // Apply Histograms to ALL streams
   mgr.ConfigureHistograms(histogram_recipe);
@@ -153,6 +150,10 @@ void ProcessRecTruthYCombi() {
   mgr.Snapshot({consts::TruthMatchedCombi()});//currently need to add isTruth branch
 
  
+  // Print diagnostics BEFORE running expensive event loop
+  std::cout << "\n=== CHECKING ANALYSIS SETUP ===\n" << std::endl;
+  mgr.PrintDiagnostics();
+
   gBenchmark->Start("analysis");
   mgr.Run();
   gBenchmark->Stop("analysis");
