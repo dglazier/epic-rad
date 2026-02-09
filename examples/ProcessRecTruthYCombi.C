@@ -140,6 +140,11 @@ void ProcessRecTruthYCombi() {
   // Apply Cuts to REC stream ONLY (Truth usually saved without cuts or with wider cuts)
   mgr.ConfigureSelection(Rec(), selection_recipe);
 
+
+  // Print diagnostics BEFORE running expensive event loop
+  std::cout << "\n=== CHECKING ANALYSIS SETUP ===\n" << std::endl;
+  mgr.PrintDiagnostics();
+  
   // Apply Histograms to ALL streams
   mgr.ConfigureHistograms(histogram_recipe);
 
