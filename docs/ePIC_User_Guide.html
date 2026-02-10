@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ePIC-RAD | User Guide</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #f8fafc; color: #334155; }
+    .rad-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 1rem; margin-bottom: 2rem; }
+    .code-block { background: #1e293b; color: #e2e8f0; padding: 1.5rem; border-radius: 0.75rem; font-family: 'Menlo', 'Monaco', monospace; overflow-x: auto; font-size: 0.9em; line-height: 1.6; }
+    .section-title { font-size: 1.5rem; font-weight: 800; color: #0f172a; margin-bottom: 1rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem; margin-top: 2.5rem; }
+    .step-number { background: #3b82f6; color: white; width: 1.75rem; height: 1.75rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 9999px; font-weight: bold; margin-right: 0.5rem; }
+    .note { background: #fffbeb; border-left: 4px solid #fbbf24; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0; font-size: 0.9em; color: #92400e; }
+  </style>
+</head>
+<body class="p-4 sm:p-8 max-w-5xl mx-auto">
+
+  <nav class="flex justify-between items-center mb-12">
+    <div class="text-2xl font-bold text-slate-900">ePIC-RAD <span class="font-normal text-slate-500">| User Guide</span></div>
+    <div class="space-x-4">
+      <a href="index.html" class="text-slate-600 hover:text-blue-600 font-medium">Home</a>
+      <a href="https://dglazier.github.io/rad/RAD_User_Guide.html" class="text-slate-600 hover:text-blue-600 font-medium">Core RAD Guide</a>
+    </div>
+  </nav>
+
+  <header class="mb-12">
+    <h1 class="text-4xl font-extrabold text-slate-900 mb-4">Handling ePIC Data</h1>
+    <p class="text-xl text-slate-600">
+        How to use <code>ePICReaction</code> to analyze multi-detector data from podio/ROOT files.
+    </p>
+  </header>
+
+  <section>
+    <h2 class="section-title"><span class="step-number">1</span>Initialization & Beams</h2>
+    <p class="mb-4">
+        Unlike generic experiments, ePIC requires specific handling of beam energies (often encoded in MC headers) and multiple data branches.
+    </p>
+    <div class="code-block">
+rad::epic::ePICReaction reaction("events", "data/sim_*.root");
+
+// 1. Set Beams from MC Header (Indices: 0=Electron, 1=Ion)
+// This scans the file header to determine the correct crossing angle and energy.
+reaction.SetBeamsFromMC(0, 1); 
+
+// 2. Prepare Data Structure
+// Merges all detectors and builds truth tables.
+reaction.SetupMatching(); 
+    </div>
+  </section>
+
+  <section>
+    <h2 class="section-title"><span class="step-number">2</span>Unified Reconstruction</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-4">
+        <div>
+            <p class="mb-4">
+                Raw ePIC data is split into separate collections. <code>ePICReaction</code> uses a <strong>ParticleInjector</strong> to merge them into a single "Unified" list (<code>rec_px</code>, <code>rec_pid</code>, etc.).
+            </p>
+            <p>You do not need to know which detector a particle came from to analyze it, but you can check if needed.</p>
+        </div>
+        <div class="rad-card p-4 bg-slate-50 border-slate-200">
+            <h4 class="font-bold text-slate-700 mb-2">Sources Merged:</h4>
+            <ul class="list-disc pl-5 text-sm space-y-1 text-slate-600">
+                <li><strong>Central:</strong> <code>ReconstructedParticles</code> (ID=1)</li>
+                <li><strong>Roman Pots:</strong> <code>ForwardRomanPot...</code> (ID=2)</li>
+                <li><strong>ZDC:</strong> <code>ReconstructedFarForward...</code> (ID=3)</li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="code-block">
+// Example: Accessing detector source in analysis
+// This variable is automatically available after initialization
+reaction.Define("is_roman_pot", "rec_det_id == 2");
+    </div>
+  </section>
+
+  <section>
+    <h2 class="section-title"><span class="step-number">3</span>MC Matching & Truth</h2>
+    <p class="mb-4">
+        When you call <code>SetupMatching()</code>, the framework generates several critical columns for efficiency and resolution studies.
+    </p>
+
+    <div class="rad-card p-6">
+        <h3 class="text-lg font-bold text-slate-800 mb-2">Key Variables</h3>
+        <ul class="list-disc pl-5 space-y-4 text-slate-700">
+            <li>
+                <code>rec_match_id</code>: 
+                <span class="text-sm text-slate-500 block">Index of the MCParticle that generated this track. Value is <code>-1</code> if noise/fake.</span>
+            </li>
+            <li>
+                <code>rec_true_pid</code>: 
+                <span class="text-sm text-slate-500 block">The PDG code of the matched truth particle. Useful for "Perfect PID" studies.</span>
+            </li>
+        </ul>
+    </div>
+
+    <div class="note">
+        <strong>Important:</strong> Matching logic differs by detector. Central tracks use <code>ReconstructedParticleAssociations</code>. Forward detectors (RP, ZDC) use a heuristic based on PID and Generator Status.
+    </div>
+
+    <div class="code-block">
+// Example: Perfect PID Selection
+// Use the Truth PID instead of the Reconstructed PID to define candidates
+reaction.SetParticleCandidates("ele", 2, rad::index::FilterIndices(11), {"rec_true_pid"});
+    </div>
+  </section>
+
+  <section>
+    <h2 class="section-title"><span class="step-number">4</span>Forward Detectors</h2>
+    <p class="mb-4">
+        Particles like the <strong>Recoil Proton</strong> (Roman Pots) or <strong>Neutron</strong> (ZDC) are handled transparently. However, ensure your input files actually contain these branches if you are performing a "Detected Recoil" analysis.
+    </p>
+    <div class="code-block">
+// Selecting a proton (Recoil)
+// The framework searches the Unified vector. If a proton was found in the Roman Pots,
+// it is included here automatically.
+reaction.SetParticleCandidates("recoil", 3, rad::index::FilterIndices(2212), {"rec_pid"});
+    </div>
+  </section>
+
+</body>
+</html>
