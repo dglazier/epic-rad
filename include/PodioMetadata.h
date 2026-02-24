@@ -9,20 +9,20 @@
 #include <TFile.h>
 #include <TTree.h>
 
-namespace podio{
-  namespace root_utils{
-    // Struct definition from podio::root_utils
-    struct CollectionWriteInfo {
-      uint32_t collectionID{static_cast<uint32_t>(-1)};
-      std::string dataType{};
-      bool isSubset{false};
-      unsigned int schemaVersion{0};
-      std::string name{};
-      std::string storageType{};
-    };
+/* namespace podio{ */
+/*   namespace root_utils{ */
+/*     // Struct definition from podio::root_utils */
+/*     struct CollectionWriteInfo { */
+/*       uint32_t collectionID{static_cast<uint32_t>(-1)}; */
+/*       std::string dataType{}; */
+/*       bool isSubset{false}; */
+/*       unsigned int schemaVersion{0}; */
+/*       std::string name{}; */
+/*       std::string storageType{}; */
+/*     }; */
     
-  }
-}
+/*   } */
+/* } */
 
 #pragma link C++ class podio::root_utils::CollectionWriteInfo+;
 #pragma link C++ class vector<podio::root_utils::CollectionWriteInfo>+;
