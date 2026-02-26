@@ -331,7 +331,7 @@ namespace rad {
         
         // Define standard particle columns
         ROOT::RVec<std::string> suffixes = {"double px", "double py", "double pz", "double m", "int pid", "short charge", "int det_id"};
-        if(_truthMatched) { suffixes.push_back("int match_id"); suffixes.push_back("int true_pid"); }
+        if(_truthMatched) { suffixes.push_back("int match_id"); }
 	
         injector.DefineParticleInfo(suffixes);
 
@@ -356,12 +356,10 @@ namespace rad {
         if(_truthMatched) {
             // Electron Beam: Matches Truth Index 0
             ele_cols.push_back("rad::Indices_t{0}"); 
-            ele_cols.push_back(bEle + consts::NamePid()); // True PID is same as Rec PID
 
             // Ion Beam: Matches Truth Index 1
             ion_cols.push_back("rad::Indices_t{1}");
-            ion_cols.push_back(bIon + consts::NamePid()); // True PID is same as Rec PID
-        }
+       }
 
         // Add to Injector
         injector.AddSource(Rec(), ele_cols);
@@ -383,6 +381,7 @@ namespace rad {
         zdc.SetTargetPID(2112); zdc.SetIsCorrected(true); zdc.SetMinP(1); zdc.Process(this, injector, _truthMatched);
 
         injector.CreateUnifiedVectors();
+	
         util::CountParticles(this, Rec());
         if (isEnd) {
 	  
@@ -422,10 +421,11 @@ namespace rad {
         injector.AddSource(Truth(), {
           "MCParticles.momentum.x", "MCParticles.momentum.y", "MCParticles.momentum.z",
           "MCParticles.mass", "MCParticles.PDG", "MCParticles.generatorStatus", "MCParticles.charge"
-        }, "MCParticles.generatorStatus==1"); 
+        }, "MCParticles.generatorStatus==1||MCParticles.generatorStatus==3||MCParticles.generatorStatus==13"); 
 	// }, "MCParticles.generatorStatus==1||MCParticles.generatorStatus==4"); 
         
         injector.CreateUnifiedVectors();
+	DefineTruePID(Rec());
         util::CountParticles(this, Truth());
         if (isEnd) {
 
@@ -433,26 +433,96 @@ namespace rad {
     }
 
     inline void ePICReaction::SetupMatching(Bool_t isEnd) {
-        _truthMatched = true;
-        
-        // Define standard matching ID column
-        // Uses the ReconstructedParticleAssociations table to map RecID -> SimID
-        Define("Central_match_id" + DoNotWriteTag(), 
-            [](const ROOT::RVecU& recID, const ROOT::RVecU& simID, const Indices_t& rec_ind) {
-                Indices_t match_id(rec_ind.size(), -1);
-                // Map association IDs to local indices
-                for(size_t i = 0; i < recID.size(); ++i) { 
-                    if(recID[i] < (uint)match_id.size()) match_id[recID[i]] = (int)simID[i]; 
-                }
-                return match_id;
-            }, {"ReconstructedParticleAssociations.recID", "ReconstructedParticleAssociations.simID", "ReconstructedParticles.PDG"}
-        );
-        SetupReconstructed(kFALSE); SetupTruth(kFALSE);
+      _truthMatched = true;
 
+
+      // Define standard matching ID column
+      // Uses the ReconstructedParticleAssociations table to map RecID -> SimID
+      Define("Central_match_id" + DoNotWriteTag(),[](const Indices_t& recID, const Indices_t& simID, const Indices_t& rec_ind, const Indices_t& genStat){
+	//Indices_t map(genStat.size(), -1);
+	Indices_t map; //declare map
+	//initialize map for real hepmc particles (genstat>0)
+	for (size_t i = 0; i<genStat.size(); i++){
+	  if(genStat[i]>0) map.push_back(-1);
+	}
+
+	// truth[0] and truth[1] are beams. These correspond to
+	// the FIRST beam_e and FIRST beam_ion in MCParticles.
+
+	// First pass: find beam_e and beam_ion positions in MC list
+	int beam_e_sim = -1;
+	int beam_ion_sim = -1;
+
+	// beam particles are genStatus==4
+	for (size_t i = 0; i < genStat.size(); ++i) {
+	  if (genStat[i] == 4) {
+	    if (beam_e_sim < 0)      beam_e_sim = i;
+	    else if (beam_ion_sim < 0) beam_ion_sim = i;
+	  }
+	}
+
+	// Fill mapping for beams
+	if (beam_e_sim  >= 0) map[beam_e_sim]  = 0;
+	if (beam_ion_sim >= 0) map[beam_ion_sim] = 1;
+
+	// Now fill stable particles
+	int pos = 2;
+	for (size_t i = 0; i < genStat.size(); ++i) {
+	  if(genStat[i] >0 && genStat[i]!=4){ 
+	    map[i] = pos++;
+	  }
+	}
+
+	//	std::cout <<"MCParticlesToTruthMap " << map << std::endl;
+
+	Indices_t old_match_id(rec_ind.size(), -1);
+	Indices_t match_id(rec_ind.size(), -1);
+	// Map association IDs to local indices
+	for(size_t i = 0; i < recID.size(); ++i) {
+	  if(recID[i] < (int)old_match_id.size()) old_match_id[recID[i]] = (int)simID[i];
+	}
+
+	const auto nRec = recID.size();
+	const auto nSim = simID.size();
+	const auto nMap = map.size();
+
+	for( size_t i = 0; i < recID.size(); ++i) {
+	  const int r = recID[i];
+	  const int s = simID[i];
+
+	  if (r >= 0 && r < nRec && s >= 0 && s < nMap) {
+	    match_id[r] = map[s];   // Already truth index
+	  }
+	}
+	//	std::cout << "old_match_id " << old_match_id <<std::endl;
+	//std::cout << "new_match_id " << match_id <<std::endl;
+	return match_id;
+      }, {"_ReconstructedParticleAssociations_rec.index", "_ReconstructedParticleAssociations_sim.index", "ReconstructedParticles.PDG","MCParticles.generatorStatus"}
+	);
+      SetupReconstructed(kFALSE); SetupTruth(kFALSE);
     }
+    // inline void ePICReaction::SetupMatching(Bool_t isEnd) {
+    //     _truthMatched = true;
+        
+    //     // Define standard matching ID column
+    //     // Uses the ReconstructedParticleAssociations table to map RecID -> SimID
+    //     Define("Central_match_id" + DoNotWriteTag(), 
+    //         [](const ROOT::RVecI& recID, const ROOT::RVecI& simID, const Indices_t& rec_ind) {
+    //             Indices_t match_id(rec_ind.size(), -1);
+    //             // Map association IDs to local indices
+    //             for(size_t i = 0; i < recID.size(); ++i) { 
+    //                 if(recID[i] < (uint)match_id.size()) match_id[recID[i]] = (int)simID[i]; 
+    //             }
+    //             return match_id;
+    //         },{"_ReconstructedParticleAssociations_rec.index", "_ReconstructedParticleAssociations_sim.index", "ReconstructedParticles.PDG"}
+    // 	       //{"ReconstructedParticleAssociations.recID", "ReconstructedParticleAssociations.simID", "ReconstructedParticles.PDG"}
+    //     );
+    //     SetupReconstructed(kFALSE); SetupTruth(kFALSE);
+
+    // }
 
     inline void ePICReaction::SetBeamsFromMC(UInt_t iel, UInt_t iion, Long64_t nRows) {
-        _useBeamsFromMC = true;
+      //_useBeamsFromMC = true;
        
         // Heuristic: Scan first nRows to find average beam energy
         auto nthreads = ROOT::GetThreadPoolSize();
@@ -495,13 +565,17 @@ namespace rad {
     }
 
     inline void ePICReaction::DefineTruePID(const std::string& prefix) {
+      rad::PrintDefinedColumnNames(CurrFrame());
+
         // Helper to pull Truth PID into the Reconstructed stream for convenience
-        Define(prefix + "true_pid" + DoNotWriteTag(), 
+        Define(prefix + "true_pid", 
                [](const Indices_t& match_id, const Indices_t& tru_pdg) {
+		 cout<<"DefineTruePid "<<match_id<<tru_pdg<<endl;
                    Indices_t tpid(match_id.size(), 0);
                    for(size_t i=0; i<(int)match_id.size(); ++i) { if(match_id[i] != -1 && match_id[i] < (int)tru_pdg.size()) tpid[i] = tru_pdg[match_id[i]]; }
+		   cout<<"DefineTruePid "<<tpid<<endl;
                    return tpid;
-               }, {prefix + "match_id" + DoNotWriteTag(), "MCParticles.PDG"});
+              }, {prefix + "match_id", "tru_pid"});
     }
   } 
 }
