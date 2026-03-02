@@ -178,6 +178,8 @@ namespace rad {
       /** @return Raw pointer to metadata manager (nullable). */
       rad::podio::PodioMetadata* GetMetadata() { return _podioMetadata.get(); }
 
+      void SetIonPdg(const int pdg){_ionPDG=pdg;}
+      
     private:
       /** @brief internal helper to load metadata safely. */
       void InitMetadata(const std::string& filename);
@@ -189,7 +191,9 @@ namespace rad {
       bool _truthMatched = false;   
       bool _beamsCorrected = false; 
       Int_t _idxBeamEle = 0;       
-      Int_t _idxBeamIon = 1;       
+      Int_t _idxBeamIon = 1;
+      Int_t _ionPDG=2212;
+      
       std::shared_ptr<rad::podio::PodioMetadata> _podioMetadata;
     }; 
 
@@ -326,12 +330,13 @@ namespace rad {
         DefineBeamComponents(Rec());
 	SetBeamElectronIndex(_idxBeamEle,Rec());
 	SetBeamIonIndex(_idxBeamIon,Rec());
+
 	//create source injector
         rad::ParticleInjector injector(this);
         
         // Define standard particle columns
         ROOT::RVec<std::string> suffixes = {"double px", "double py", "double pz", "double m", "int pid", "short charge", "int det_id"};
-        if(_truthMatched) { suffixes.push_back("int match_id"); suffixes.push_back("int true_pid"); }
+        if(_truthMatched) { suffixes.push_back("int match_id"); }
 	
         injector.DefineParticleInfo(suffixes);
 
@@ -356,12 +361,10 @@ namespace rad {
         if(_truthMatched) {
             // Electron Beam: Matches Truth Index 0
             ele_cols.push_back("rad::Indices_t{0}"); 
-            ele_cols.push_back(bEle + consts::NamePid()); // True PID is same as Rec PID
 
             // Ion Beam: Matches Truth Index 1
             ion_cols.push_back("rad::Indices_t{1}");
-            ion_cols.push_back(bIon + consts::NamePid()); // True PID is same as Rec PID
-        }
+       }
 
         // Add to Injector
         injector.AddSource(Rec(), ele_cols);
@@ -383,6 +386,7 @@ namespace rad {
         zdc.SetTargetPID(2112); zdc.SetIsCorrected(true); zdc.SetMinP(1); zdc.Process(this, injector, _truthMatched);
 
         injector.CreateUnifiedVectors();
+	
         util::CountParticles(this, Rec());
         if (isEnd) {
 	  
@@ -394,8 +398,9 @@ namespace rad {
 	
 	// 1. DEFINE BEAM COLUMNS (Truth Version)
         DefineBeamComponents(Truth());
-      	SetBeamElectronIndex(_idxBeamEle,Truth());
+	SetBeamElectronIndex(_idxBeamEle,Truth());
 	SetBeamIonIndex(_idxBeamIon,Truth());
+
 
         rad::ParticleInjector injector(this);
         injector.DefineParticleInfo({"double px", "double py", "double pz", "double m", "int pid", "int genStat", "int charge"});
@@ -422,10 +427,10 @@ namespace rad {
         injector.AddSource(Truth(), {
           "MCParticles.momentum.x", "MCParticles.momentum.y", "MCParticles.momentum.z",
           "MCParticles.mass", "MCParticles.PDG", "MCParticles.generatorStatus", "MCParticles.charge"
-        }, "MCParticles.generatorStatus==1"); 
-	// }, "MCParticles.generatorStatus==1||MCParticles.generatorStatus==4"); 
-        
+        }, "MCParticles.generatorStatus>0 && MCParticles.generatorStatus!=4"); 
+       
         injector.CreateUnifiedVectors();
+	DefineTruePID(Rec());
         util::CountParticles(this, Truth());
         if (isEnd) {
 
@@ -433,27 +438,101 @@ namespace rad {
     }
 
     inline void ePICReaction::SetupMatching(Bool_t isEnd) {
-        _truthMatched = true;
-        
-        // Define standard matching ID column
-        // Uses the ReconstructedParticleAssociations table to map RecID -> SimID
-        Define("Central_match_id" + DoNotWriteTag(), 
-            [](const ROOT::RVecU& recID, const ROOT::RVecU& simID, const Indices_t& rec_ind) {
-                Indices_t match_id(rec_ind.size(), -1);
-                // Map association IDs to local indices
-                for(size_t i = 0; i < recID.size(); ++i) { 
-                    if(recID[i] < (uint)match_id.size()) match_id[recID[i]] = (int)simID[i]; 
-                }
-                return match_id;
-            }, {"ReconstructedParticleAssociations.recID", "ReconstructedParticleAssociations.simID", "ReconstructedParticles.PDG"}
-        );
-        SetupReconstructed(kFALSE); SetupTruth(kFALSE);
+      _truthMatched = true;
 
+      /*
+      // Define standard matching ID column
+      // Uses the ReconstructedParticleAssociations table to map SimID -> filtered SimID
+      Define("Central_match_id" + DoNotWriteTag(),[ionPDG=_ionPDG](const Indices_t& recID, const Indices_t& simID, const Indices_t& rec_ind, const Indices_t& genStat,const RVecI& pid){
+
+	cout<<"Central_match_id"<<endl;
+	const auto nTru0 = genStat.size();//size of MCParticles
+	const auto nTru = ROOT::VecOps::Sum(genStat > 0); //size of generated truth
+	Indices_t map(nTru0, -1); //needs to have size = MCParticles for map in case a genereated particle ends up further down the list than status=0 particles
+
+	//find position of beams in input truth record
+	const auto beam_e_sim=ROOT::VecOps::ArgMax(genStat == 4 && pid == 11);
+	const auto beam_ion_sim=ROOT::VecOps::ArgMax(genStat == 4 && pid == ionPDG);
+
+
+	// Fill mapping for beams
+	//Not used as they are not in recID
+	map[beam_e_sim]  = 0;
+	map[beam_ion_sim] = 1;
+
+	// Now fill generated particles
+        uint pos = 2;//start after beams
+	for (size_t i = 0; i < nTru0; ++i) {
+	  if(genStat[i] >0 && genStat[i]!=4){ 
+	    map[i] = pos++;
+	  }
+	}
+	const auto nRec = recID.size();
+	Indices_t match_id(nRec, -1);
+
+	//loop over reconstructed and
+	for( size_t i = 0; i <nRec ; ++i) {
+	  const int r = recID[i];
+	  const int s = simID[i];
+
+	  if (r >= 0 && r < nRec && s >= 0 && s < nTru) {
+	    match_id[r] = map[s];   // Already truth index
+	  }
+	}
+		cout<<"Central_match_id"<<recID<<simID<<map<<match_id<<pid<<endl;
+
+	return match_id;
+      }, {"_ReconstructedParticleAssociations_rec.index", "_ReconstructedParticleAssociations_sim.index", "ReconstructedParticles.PDG","MCParticles.generatorStatus","MCParticles.PDG"}
+	);
+      */
+      Define("Central_match_id" + DoNotWriteTag(),[ionPDG=_ionPDG](const Indices_t& recID, const Indices_t& simID, const Indices_t& rec_ind, const Indices_t& genStat,const RVecI& pid){
+
+	const auto nTru0 = genStat.size();//size of MCParticles
+	const auto nTru = ROOT::VecOps::Sum(genStat > 0); //size of generated truth
+	Indices_t map(nTru0, -1); //needs to have size = MCParticles for map in case a genereated particle ends up further down the list than status=0 particles
+
+	//find position of beams in input truth record
+	const auto beam_e_sim=ROOT::VecOps::ArgMax(genStat == 4 && pid == 11);
+	const auto beam_ion_sim=ROOT::VecOps::ArgMax(genStat == 4 && pid == ionPDG);
+
+
+	// Fill mapping for beams
+	//Not used as they are not in recID
+	//We can actually just remove the beam related code
+	map[beam_e_sim]  = 0;
+	map[beam_ion_sim] = 1;
+
+
+	uint pos = 2;//start after beams
+	for (size_t i = 0; i < nTru0; ++i) {
+	  if(genStat[i] >0 && genStat[i]!=4){ 
+	    map[i] = pos++;
+	  }
+	}
+
+	
+	const auto nRec = rec_ind.size();
+	Indices_t match_id(nRec, -1);
+	const auto nMap = map.size();
+	//loop over reconstructed and
+	for( size_t i = 0; i <nRec ; ++i) {
+	  const int r = recID[i];
+	  const int s = simID[i];
+
+	  if (r >= 0 && r < nRec && s >= 0 && s < nMap) {
+	    match_id[r] = map[s];   // Already truth index
+	  }
+	}
+	
+	//cout<<"Central_match_id"<<recID<<simID<<map<<match_id<<endl;
+	return match_id;
+      }, {"_ReconstructedParticleAssociations_rec.index", "_ReconstructedParticleAssociations_sim.index", "ReconstructedParticles.PDG","MCParticles.generatorStatus","MCParticles.PDG"});
+      SetupReconstructed(kFALSE); SetupTruth(kFALSE);
     }
+  
 
     inline void ePICReaction::SetBeamsFromMC(UInt_t iel, UInt_t iion, Long64_t nRows) {
-        _useBeamsFromMC = true;
-       
+        
         // Heuristic: Scan first nRows to find average beam energy
         auto nthreads = ROOT::GetThreadPoolSize();
         if (nthreads) ROOT::DisableImplicitMT(); // Disable MT for simple range scan
@@ -495,13 +574,15 @@ namespace rad {
     }
 
     inline void ePICReaction::DefineTruePID(const std::string& prefix) {
+      rad::PrintDefinedColumnNames(CurrFrame());
+
         // Helper to pull Truth PID into the Reconstructed stream for convenience
-        Define(prefix + "true_pid" + DoNotWriteTag(), 
+        Define(prefix + "true_pid", 
                [](const Indices_t& match_id, const Indices_t& tru_pdg) {
                    Indices_t tpid(match_id.size(), 0);
                    for(size_t i=0; i<(int)match_id.size(); ++i) { if(match_id[i] != -1 && match_id[i] < (int)tru_pdg.size()) tpid[i] = tru_pdg[match_id[i]]; }
                    return tpid;
-               }, {prefix + "match_id" + DoNotWriteTag(), "MCParticles.PDG"});
+              }, {prefix + "match_id", "tru_pid"});
     }
   } 
 }

@@ -2,6 +2,7 @@
 #include "ePICReaction.h"
 #include "KinematicsProcElectro.h"
 #include "ElectronScatterKinematics.h"
+#include "BasicKinematicsRDF.h"
 #include <TBenchmark.h>
 
 /**
@@ -31,7 +32,7 @@ void ProcessRecTruthYCombi() {
     "events",
     "/home/dglazier/EIC/data/Y4260/jpac_y4260_18_275_10day_*_recon.root"};
 
-  mgr.SetOutputDir("output");
+  mgr.SetOutputDir("output2");
   auto& rad_df = mgr.Reaction();
 
   //Indices of electron,ion in MCParticles
@@ -46,7 +47,7 @@ void ProcessRecTruthYCombi() {
   const int Role_DecayEle = 6; 
   const int Role_DecayPos = 7; 
 
-  //arguments (name, truth_idx, candidate list function, arguments for list function)
+   //arguments (name, truth_idx, candidate list function, arguments for list function)
   rad_df.SetParticleCandidates(consts::ScatEle(), Role_ScatEle, rad::index::FilterIndices(11), {"rec_true_pid"});
   rad_df.SetParticleCandidates("ele", Role_DecayEle, rad::index::FilterIndices(11),  {"rec_true_pid"}); 
   rad_df.SetParticleCandidates("pos", Role_DecayPos, rad::index::FilterIndices(-11), {"rec_true_pid"}); 
@@ -82,16 +83,16 @@ void ProcessRecTruthYCombi() {
     p.Creator().Sum("Jpsi", {{"ele", "pos"}});       
     p.Creator().Sum("TwoPi", {{"pip", "pim"}});       
     p.Creator().Sum("Y",    {{"Jpsi", "TwoPi"}});
-    //p.Creator().Diff("Miss",    {{BeamEle(),BeamIon()},{"Jpsi", "TwoPi"}});
+    // p.Creator().Diff("Miss",    {{BeamEle(),BeamIon()},{"Jpsi", "TwoPi"}});
     p.Creator().Diff("Miss",    {{BeamEle(),BeamIon()},{"Jpsi", "TwoPi","p"}});
   
     p.SetMesonParticles({"Jpsi","TwoPi"});
     p.SetBaryonParticles({"p"});
-     //p.SetBaryonParticles({"Miss"});
+    //p.SetBaryonParticles({"Miss"});
     
     // 3. Calculate Invariant Masses
     p.Mass("MassJ",     {"ele","pos"});             
-    //    p.Mass("MassJ",     {"Jpsi"});//fix mass in postmodifer             
+    //   p.Mass("MassJ",     {"Jpsi"});//fix mass in postmodifer             
     p.Mass("MassTwoPi",     {"TwoPi"});             
     p.Mass("MassY",     {"Y"});             
     p.Mass2("MissMass2",     {"Miss"});             
@@ -124,6 +125,7 @@ void ProcessRecTruthYCombi() {
     p.PreModifier().FixMass("pip", M_pi());
     p.PreModifier().FixMass("pim", M_pi());
     p.PreModifier().FixMass("p", M_pro());
+    //p.PreModifier().FixMass("miss", M_pro());
   
     //Fix reconstructed Jpsi mass after it is calculted
     p.PostModifier().FixMass("Jpsi", M_Jpsi());
@@ -171,13 +173,22 @@ void ProcessRecTruthYCombi() {
   mgr.ConfigureHistograms(histogram_recipe);
   
   // [D] TREES
+  rad::rdf::PrintParticles(rad_df, Rec());
+  rad::rdf::PrintParticles(rad_df, Truth());
   mgr.Snapshot({consts::TruthMatchedCombi()});//currently need to add isTruth branch
 
   
   // Print diagnostics BEFORE running expensive event loop
   std::cout << "\n=== CHECKING ANALYSIS SETUP ===\n" << std::endl;
-  mgr.PrintDiagnostics();
-  //  PrintDefinedColumnNames(mgr.Reaction().CurrFrame());
+  //Diagnostics helpers
+  // rad::rdf::PrintParticles(rad_df, Truth());
+  // rad::rdf::PrintParticles(rad_df, Rec());
+  //rad::PrintDefinedColumnNames(mgr.Reaction().CurrFrame());
+  //mgr.PrintDiagnostics();
+  //PrintDefinedColumnNames will give a list of all columns we can print at this point
+  //optional 3rd argument = number of events to print for
+  //PrintColumnValues(mgr.Reaction(),{"rec_scat_ele_pz","rec_scat_ele_theta"},10);
+
   
   // =================================================================================
   // 3. RUN IT ALL 

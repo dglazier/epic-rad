@@ -115,9 +115,7 @@ namespace rad {
           if (!reaction->ColumnExists(_prefix + "match_id" + dnw)) {
               reaction->DefineForwardMatching(_prefix, _targetPID);
           }
-          reaction->DefineTruePID(_prefix);
           cols.push_back(_prefix + "match_id" + dnw);
-          cols.push_back(_prefix + "true_pid" + dnw);
       }
 
       injector.AddSource(rad::consts::data_type::Rec(), cols, filter);
