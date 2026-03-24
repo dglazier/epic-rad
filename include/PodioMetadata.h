@@ -9,20 +9,31 @@
 #include <TFile.h>
 #include <TTree.h>
 
-/* namespace podio{ */
-/*   namespace root_utils{ */
-/*     // Struct definition from podio::root_utils */
-/*     struct CollectionWriteInfo { */
-/*       uint32_t collectionID{static_cast<uint32_t>(-1)}; */
-/*       std::string dataType{}; */
-/*       bool isSubset{false}; */
-/*       unsigned int schemaVersion{0}; */
-/*       std::string name{}; */
-/*       std::string storageType{}; */
-/*     }; */
+
+#if defined(__has_include)
+#  if __has_include("podio/utilities/RootHelpers.h")
+#    define PODIO_COLLECTIONWRITEINFO_DEFINED
+#  endif
+#endif
+
+#ifndef PODIO_COLLECTIONWRITEINFO_DEFINED
+//#ifndef PODIO_UTILITIES_ROOTHELPERS_H
+//#define PODIO_UTILITIES_ROOTHELPERS_H
+namespace podio{ 
+  namespace root_utils{
+    // Struct definition from podio::root_utils
+    struct CollectionWriteInfo {
+      uint32_t collectionID{static_cast<uint32_t>(-1)};
+      std::string dataType{};
+      bool isSubset{false};
+      unsigned int schemaVersion{0};
+      std::string name{};
+      std::string storageType{};
+    };
     
-/*   } */
-/* } */
+  }
+}
+#endif
 
 #pragma link C++ class podio::root_utils::CollectionWriteInfo+;
 #pragma link C++ class vector<podio::root_utils::CollectionWriteInfo>+;
