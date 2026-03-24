@@ -100,6 +100,7 @@ namespace rad{
 	    for (auto &entry : *info) {
 	      _collectionIDs.push_back(entry.collectionID);
 	      _names.push_back(entry.name);
+	      cout<<_collectionIDs.back()<<" "<<_names.back()<<endl;
 	    }
 	  } 
 	  else if (typeName.find("tuple") != std::string::npos) {
@@ -114,11 +115,13 @@ namespace rad{
 	      std::cout << std::get<1>(entry) << std::endl;
 	      _collectionIDs.push_back(std::get<0>(entry));
 	      _names.push_back(std::get<1>(entry));
+	      cout<<_collectionIDs.back()<<" "<<_names.back()<<endl;
 	    }
 	  }else {
 	    throw std::runtime_error("Unknown CollectionTypeInfo schema: " + typeName);
 	  }
 	}
+	
       }
 	
       bool Exists(const std::string &name) const {
