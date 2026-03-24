@@ -430,8 +430,7 @@ namespace rad {
         }, "MCParticles.generatorStatus>0 && MCParticles.generatorStatus!=4"); 
        
         injector.CreateUnifiedVectors();
-	DefineTruePID(Rec());
-        util::CountParticles(this, Truth());
+	util::CountParticles(this, Truth());
         if (isEnd) {
 
 	}
@@ -527,7 +526,7 @@ namespace rad {
 	//cout<<"Central_match_id"<<recID<<simID<<map<<match_id<<endl;
 	return match_id;
       }, {"_ReconstructedParticleAssociations_rec.index", "_ReconstructedParticleAssociations_sim.index", "ReconstructedParticles.PDG","MCParticles.generatorStatus","MCParticles.PDG"});
-      SetupReconstructed(kFALSE); SetupTruth(kFALSE);
+      SetupReconstructed(kFALSE); SetupTruth(kFALSE); DefineTruePID(Rec());
     }
   
 
