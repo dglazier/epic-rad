@@ -146,7 +146,14 @@ namespace rad {
       //     };
       //     Define(outName, wrapper, {inputCol});
       // }
-
+      /**
+       * @brief Creates a 1/0 flag aligned with ReconstructedParticles indicating 
+       * if the particle was also reconstructed in a specific subdetector.
+       * @param outName The name of the new column (e.g., "rec_has_tagger")
+       * @param subdetAssocName The association collection of the subdetector.
+       */
+      void DefineDetectorFlag(const std::string& outName, const std::string& subdetAssocName);
+      
       // =================================================================================
       // Functional Methods
       // =================================================================================
@@ -246,9 +253,12 @@ namespace rad {
                                                 const ROOT::RVec<std::string>& collectionNames, 
                                                 const std::string& memberName) 
     {
-      if(!_podioMetadata) throw std::runtime_error("DefineAssociation requires PodioMetadata.");
-      if (collectionNames.empty()) return;
-
+      if(!_podioMetadata) throw std::runtime_error("ePICReaction::DefineAssociation requires PodioMetadata.");
+      if (collectionNames.empty()){
+	return;
+      }
+      std::cout<<"ePICReaction::DefineAssociation "<<objName<<" "<<memberName<<std::endl;
+ 
       // 1. Resolve Collections
       // We filter the requested collections against what is actually in the file
       ROOT::RVec<std::string> validNames;
@@ -259,7 +269,10 @@ namespace rad {
               validIDs.push_back(_podioMetadata->CollectionIDFor(name));
           }
       }
-      if(validNames.empty()) return;
+      if(validNames.empty()){
+	std::cout<<"Error no validNames from "<<collectionNames<<" "<<memberName<<std::endl;
+	throw std::runtime_error("ePICReaction::DefineAssociation input data does not have branch");
+      }
 
       // 2. Define ID Map (Unified Index)
       // This maps the various PODIO Collection IDs to a local index (0, 1, 2...)
@@ -268,7 +281,8 @@ namespace rad {
            rad::podio::IdToLocalIndexMap mapper(validIDs);
            Define(unifiedIdxName, [mapper](const RVecU& ids){ return mapper(ids); }, {"_ReconstructedParticles_" + objName + ".collectionID"});
       }
-      
+         std::cout<<"ePICReaction::DefineAssociation "<<objName<<" "<<memberName<<std::endl;
+ 
       // 3. Prepare Inputs
       ROOT::RVec<std::string> leafCols;
       for(const auto& name : validNames) leafCols.push_back(name + "." + memberName);
@@ -297,6 +311,7 @@ namespace rad {
                   ("ReconstructedParticles." + objName + "_begin").c_str(), 
                   ("ReconstructedParticles." + objName + "_end").c_str())
       );
+      std::cout<<"ePICReaction::DefineAssociation "<<outputCol<<std::endl;
     }
 
     // --- Projection Logic (String Version) ---
@@ -430,9 +445,9 @@ namespace rad {
         }, "MCParticles.generatorStatus>0 && MCParticles.generatorStatus!=4"); 
        
         injector.CreateUnifiedVectors();
-	DefineTruePID(Rec());
         util::CountParticles(this, Truth());
-        if (isEnd) {
+        
+	if (isEnd) {
 
 	}
     }
@@ -440,51 +455,10 @@ namespace rad {
     inline void ePICReaction::SetupMatching(Bool_t isEnd) {
       _truthMatched = true;
 
-      /*
-      // Define standard matching ID column
+     
+      // Define central matching ID column
       // Uses the ReconstructedParticleAssociations table to map SimID -> filtered SimID
-      Define("Central_match_id" + DoNotWriteTag(),[ionPDG=_ionPDG](const Indices_t& recID, const Indices_t& simID, const Indices_t& rec_ind, const Indices_t& genStat,const RVecI& pid){
-
-	cout<<"Central_match_id"<<endl;
-	const auto nTru0 = genStat.size();//size of MCParticles
-	const auto nTru = ROOT::VecOps::Sum(genStat > 0); //size of generated truth
-	Indices_t map(nTru0, -1); //needs to have size = MCParticles for map in case a genereated particle ends up further down the list than status=0 particles
-
-	//find position of beams in input truth record
-	const auto beam_e_sim=ROOT::VecOps::ArgMax(genStat == 4 && pid == 11);
-	const auto beam_ion_sim=ROOT::VecOps::ArgMax(genStat == 4 && pid == ionPDG);
-
-
-	// Fill mapping for beams
-	//Not used as they are not in recID
-	map[beam_e_sim]  = 0;
-	map[beam_ion_sim] = 1;
-
-	// Now fill generated particles
-        uint pos = 2;//start after beams
-	for (size_t i = 0; i < nTru0; ++i) {
-	  if(genStat[i] >0 && genStat[i]!=4){ 
-	    map[i] = pos++;
-	  }
-	}
-	const auto nRec = recID.size();
-	Indices_t match_id(nRec, -1);
-
-	//loop over reconstructed and
-	for( size_t i = 0; i <nRec ; ++i) {
-	  const int r = recID[i];
-	  const int s = simID[i];
-
-	  if (r >= 0 && r < nRec && s >= 0 && s < nTru) {
-	    match_id[r] = map[s];   // Already truth index
-	  }
-	}
-		cout<<"Central_match_id"<<recID<<simID<<map<<match_id<<pid<<endl;
-
-	return match_id;
-      }, {"_ReconstructedParticleAssociations_rec.index", "_ReconstructedParticleAssociations_sim.index", "ReconstructedParticles.PDG","MCParticles.generatorStatus","MCParticles.PDG"}
-	);
-      */
+    
       Define("Central_match_id" + DoNotWriteTag(),[ionPDG=_ionPDG](const Indices_t& recID, const Indices_t& simID, const Indices_t& rec_ind, const Indices_t& genStat,const RVecI& pid){
 
 	const auto nTru0 = genStat.size();//size of MCParticles
@@ -511,11 +485,12 @@ namespace rad {
 	}
 
 	
-	const auto nRec = rec_ind.size();
+	// Cast the unsigned sizes to signed integers
+	const auto nRec = static_cast<int>(recID.size()); 
+	const auto nMap = static_cast<int>(map.size());   // Or nTru0, depending on which snippet you used
 	Indices_t match_id(nRec, -1);
-	const auto nMap = map.size();
 	//loop over reconstructed and
-	for( size_t i = 0; i <nRec ; ++i) {
+	for( Int_t i = 0; i <nRec ; ++i) {
 	  const int r = recID[i];
 	  const int s = simID[i];
 
@@ -527,7 +502,8 @@ namespace rad {
 	//cout<<"Central_match_id"<<recID<<simID<<map<<match_id<<endl;
 	return match_id;
       }, {"_ReconstructedParticleAssociations_rec.index", "_ReconstructedParticleAssociations_sim.index", "ReconstructedParticles.PDG","MCParticles.generatorStatus","MCParticles.PDG"});
-      SetupReconstructed(kFALSE); SetupTruth(kFALSE);
+      
+      SetupReconstructed(kFALSE); SetupTruth(kFALSE); DefineTruePID(Rec());
     }
   
 
@@ -580,10 +556,86 @@ namespace rad {
         Define(prefix + "true_pid", 
                [](const Indices_t& match_id, const Indices_t& tru_pdg) {
                    Indices_t tpid(match_id.size(), 0);
-                   for(size_t i=0; i<(int)match_id.size(); ++i) { if(match_id[i] != -1 && match_id[i] < (int)tru_pdg.size()) tpid[i] = tru_pdg[match_id[i]]; }
+                   for(UInt_t i=0; i<match_id.size(); ++i) { if(match_id[i] != -1 && match_id[i] < (int)tru_pdg.size()) tpid[i] = tru_pdg[match_id[i]]; }
                    return tpid;
               }, {prefix + "match_id", "tru_pid"});
     }
+    inline void ePICReaction::DefineDetectorFlag(const std::string& outName, const std::string& subdetAssocName) {
+        
+        // The raw simulated indices seen by the subdetector
+        std::string subdetSimCol = "_" + subdetAssocName + "_sim.index";
+        
+        Define(outName, 
+            [ionPDG=_ionPDG](const rad::Indices_t& rec_match_id, 
+                             const rad::Indices_t& subdet_sim_idx,
+                             const rad::Indices_t& genStat,
+                             const ROOT::RVecI& pid) {
+                   
+                // 1. Initialize output vector perfectly aligned with rec_px / rec_match_id
+                ROOT::RVecI result(rec_match_id.size(), 0);
+                if (subdet_sim_idx.empty() || rec_match_id.empty()) return result;
+
+                // 2. Recreate the Truth Map (Raw MC Index -> Filtered MC Index)
+                // This guarantees we are speaking the same "language" as rec_match_id
+                const auto nTru0 = genStat.size();
+                rad::Indices_t map(nTru0, -1); 
+                
+                const auto beam_e_sim = ROOT::VecOps::ArgMax(genStat == 4 && pid == 11);
+                const auto beam_ion_sim = ROOT::VecOps::ArgMax(genStat == 4 && pid == ionPDG);
+                
+                map[beam_e_sim] = 0;
+                map[beam_ion_sim] = 1;
+                
+                uint pos = 2;
+                for (size_t i = 0; i < nTru0; ++i) {
+                    if(genStat[i] > 0 && genStat[i] != 4){ 
+                        map[i] = pos++;
+                    }
+                }
+
+                // 3. Map the subdetector's raw truth hits to the filtered truth IDs
+                int max_mapped_sim = -1;
+                for (size_t raw_idx : subdet_sim_idx) {
+                    if (raw_idx >= 0 && raw_idx < nTru0) {
+                        int mapped_idx = map[raw_idx];
+                        if (mapped_idx > max_mapped_sim) max_mapped_sim = mapped_idx;
+                    }
+                }
+
+                // If the subdetector saw no valid truth particles, return 0s
+                if (max_mapped_sim < 0) return result;
+
+                // Create the fast O(1) lookup table for mapped truth indices
+                std::vector<bool> subdet_saw_truth(max_mapped_sim + 1, false);
+                for (size_t raw_idx : subdet_sim_idx) {
+                    if (raw_idx >= 0 && raw_idx < nTru0) {
+                        int mapped_idx = map[raw_idx];
+                        if (mapped_idx >= 0) subdet_saw_truth[mapped_idx] = true;
+                    }
+                }
+
+                // 4. Loop over the unified rec_match_id and flag matches
+                for(size_t i = 0; i < rec_match_id.size(); ++i) {
+                    int m_idx = (int)rec_match_id[i];
+                    
+                    // If this unified particle has a valid truth match, 
+                    // and the subdetector ALSO saw that same truth particle, flag it!
+                    if (m_idx >= 0 && m_idx <= max_mapped_sim) {
+                        if (subdet_saw_truth[m_idx]) {
+                            result[i] = 1; 
+                        }
+                    }
+                }
+                
+                return result;
+            }, 
+            {Rec() + "match_id", // The unified match ID synced with rec_px
+             subdetSimCol, 
+             "MCParticles.generatorStatus", 
+             "MCParticles.PDG"}
+        );
+    }
+    
   } 
 }
 

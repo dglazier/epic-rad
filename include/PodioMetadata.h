@@ -9,7 +9,17 @@
 #include <TFile.h>
 #include <TTree.h>
 
-namespace podio{
+
+#if defined(__has_include)
+#  if __has_include("podio/utilities/RootHelpers.h")
+#    define PODIO_COLLECTIONWRITEINFO_DEFINED
+#  endif
+#endif
+
+#ifndef PODIO_COLLECTIONWRITEINFO_DEFINED
+//#ifndef PODIO_UTILITIES_ROOTHELPERS_H
+//#define PODIO_UTILITIES_ROOTHELPERS_H
+namespace podio{ 
   namespace root_utils{
     // Struct definition from podio::root_utils
     struct CollectionWriteInfo {
@@ -23,6 +33,7 @@ namespace podio{
     
   }
 }
+#endif
 
 #pragma link C++ class podio::root_utils::CollectionWriteInfo+;
 #pragma link C++ class vector<podio::root_utils::CollectionWriteInfo>+;
@@ -89,6 +100,7 @@ namespace rad{
 	    for (auto &entry : *info) {
 	      _collectionIDs.push_back(entry.collectionID);
 	      _names.push_back(entry.name);
+	      cout<<_collectionIDs.back()<<" "<<_names.back()<<endl;
 	    }
 	  } 
 	  else if (typeName.find("tuple") != std::string::npos) {
@@ -103,11 +115,13 @@ namespace rad{
 	      std::cout << std::get<1>(entry) << std::endl;
 	      _collectionIDs.push_back(std::get<0>(entry));
 	      _names.push_back(std::get<1>(entry));
+	      cout<<_collectionIDs.back()<<" "<<_names.back()<<endl;
 	    }
 	  }else {
 	    throw std::runtime_error("Unknown CollectionTypeInfo schema: " + typeName);
 	  }
 	}
+	
       }
 	
       bool Exists(const std::string &name) const {
