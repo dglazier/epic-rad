@@ -1,5 +1,6 @@
 #include "AnalysisManager.h"
 #include "ePICReaction.h"
+#include "ePICAssociationsManager.h" // <-- NEW: Include the manager
 #include "KinematicsProcElectro.h"
 #include "ElectronScatterKinematics.h"
 #include "BasicKinematicsRDF.h"
@@ -9,11 +10,11 @@
  * @brief Analysis Example: Y(4260) -> J/psi pi+ pi-
  * * Strategy:
  * 1. Define base processor for given ReconstructedParticles.
- * 2. Define additoinal processor for using cluster energy for e+,e-
+ * 2. Define additional processor for using cluster energy for e+,e-
  * 3. Produce and analyse all valid combinations
  */
 void ProcessRecTruthYCombi() {
-  //ROOT::EnableImplicitMT();
+  ROOT::EnableImplicitMT();
 
   using namespace rad;
   using namespace rad::consts::data_type; 
@@ -30,14 +31,31 @@ void ProcessRecTruthYCombi() {
   AnalysisManager<Reaction,Processor>  mgr{
     "Y4260",
     "events",
-    "/home/dglazier/EIC/data/Y4260/jpac_y4260_18_275_10day_*_recon.root"};
+    "/home/dglazier/Dropbox/EIC/Spectroscopy/SpectroscopyWorkshop25/Y/data/jpac_y4260_18_275_10day_*_recon.root"};
 
   mgr.SetOutputDir("output2");
   auto& rad_df = mgr.Reaction();
 
-  //Indices of electron,ion in MCParticles
+  //Indices of electron, ion in MCParticles
   rad_df.SetBeamsFromMC(0, 1); 
+  
+  // SetupMatching calls SetupReconstructed internally, 
+  // which builds rec_det_id needed for the AssociationManager
   rad_df.SetupMatching(); 
+
+  // --- NEW: Auxiliary Data Handling ---
+  // We use the Association Manager to extract ECal clusters 
+  // and inject them perfectly into the unified coordinate space.
+  epic::ePICAssociationManager assoc(rad_df);
+
+  assoc.For("Central")
+       .From({"EcalBarrelClusters", "EcalEndcapPClusters", "EcalEndcapNClusters"})
+       .Extract("energy")
+       .As("cal_energy"); // Automatically maps to "rec_cal_energy"
+
+  // Execute the padding and build the unified arrays for detector data
+  assoc.Build();
+  // ------------------------------------
 
   //Truth Ordering in MCParticles vector
   const int Role_ScatEle  = 2; 
@@ -47,7 +65,7 @@ void ProcessRecTruthYCombi() {
   const int Role_DecayEle = 6; 
   const int Role_DecayPos = 7; 
 
-   //arguments (name, truth_idx, candidate list function, arguments for list function)
+  //arguments (name, truth_idx, candidate list function, arguments for list function)
   rad_df.SetParticleCandidates(consts::ScatEle(), Role_ScatEle, rad::index::FilterIndices(11), {"rec_true_pid"});
   rad_df.SetParticleCandidates("ele", Role_DecayEle, rad::index::FilterIndices(11),  {"rec_true_pid"}); 
   rad_df.SetParticleCandidates("pos", Role_DecayPos, rad::index::FilterIndices(-11), {"rec_true_pid"}); 
@@ -56,19 +74,13 @@ void ProcessRecTruthYCombi() {
   rad_df.SetParticleCandidates("p", Role_Recoil, rad::index::FilterIndices(2212), {"rec_true_pid"}); 
 
   //create indices for each combination, based in given candidates
+  // Now safely executes AFTER assoc.Build()
   rad_df.MakeCombinations();
 
   //Add different processing streams for these combi events
-  mgr.AddStream(Rec(),"base"); //base rec stream
+  mgr.AddStream(Rec(),"base");   //base rec stream
   mgr.AddStream(Truth(),"base"); //base tru stream
-  mgr.AddStream(Rec(),"calE"); //rec stream using calorimeter energies for e+e-
-
-  // --- Auxiliary Data Handling ---
-  //collect and associate cluster energies with particles
-  //rec_cal_energy will be synched with momentum ordering
-  rad_df.DefineAssociation("clusters", {"EcalBarrelClusters", "EcalEndcapPClusters"}, "energy");
-  rad_df.DefineProjection("rec_cal_energy", "rec_clusters_energy", "rad::util::First");
-
+  mgr.AddStream(Rec(),"calE");   //rec stream using calorimeter energies for e+e-
 
   // =================================================================================
   // 2. ANALYSIS CONFIGURATION 
@@ -83,8 +95,8 @@ void ProcessRecTruthYCombi() {
     p.Creator().Sum("Jpsi", {{"ele", "pos"}});       
     p.Creator().Sum("TwoPi", {{"pip", "pim"}});       
     p.Creator().Sum("Y",    {{"Jpsi", "TwoPi"}});
-    // p.Creator().Diff("Miss",    {{BeamEle(),BeamIon()},{"Jpsi", "TwoPi"}});
-    p.Creator().Diff("Miss",    {{BeamEle(),BeamIon()},{"Jpsi", "TwoPi","p"}});
+    
+    p.Creator().Diff("Miss", {{BeamEle(), BeamIon()}, {"Jpsi", "TwoPi", "p", ScatEle()}});
   
     p.SetMesonParticles({"Jpsi","TwoPi"});
     p.SetBaryonParticles({"p"});
@@ -92,27 +104,30 @@ void ProcessRecTruthYCombi() {
     
     // 3. Calculate Invariant Masses
     p.Mass("MassJ",     {"ele","pos"});             
-    //   p.Mass("MassJ",     {"Jpsi"});//fix mass in postmodifer             
-    p.Mass("MassTwoPi",     {"TwoPi"});             
+    p.Mass("MassTwoPi", {"TwoPi"});             
     p.Mass("MassY",     {"Y"});             
-    p.Mass2("MissMass2",     {"Miss"});             
+    p.Mass2("MissMass2",{"Miss"});             
 
     p.Q2();
     
-    //4. Calculate Mandelstam t (requires beam definition)
+    // 4. Calculate Mandelstam t 
     p.RegisterCalc("tb", rad::physics::TBot);
-    p.RegisterCalc("DeltaPhiYxP", rad::DeltaPhi,{{"Y","p"}});
+    p.RegisterCalc("DeltaPhiYxP", rad::DeltaPhi, {{"Y","p"}});
     
-    p.ParticleTheta({"scat_ele","Y"});
-    p.ParticlePhi({"scat_ele","Y"});
-    p.ParticleP({"scat_ele","Y"});
-    
+    p.ParticleTheta({"scat_ele","Y","ele","pos"});
+    p.ParticlePhi({"scat_ele","Y","ele","pos"});
+    p.ParticleP({"scat_ele","Y","ele","pos"});
+
+    // 5. Auxiliary Passthrough
+    // Pulls the perfectly unified auxiliary column directly into the Flat output tree
+    p.PassThrough("ele", "rec_cal_energy", "_cal_energy");
+    p.PassThrough("pos", "rec_cal_energy", "_cal_energy"); 
+  
   };
 
   // Apply Topology to ALL streams
   mgr.ConfigureKinematics(topology_recipe);
 
-  
   // [B] (i) Apply some pre and post momentum organising modifiers
   // Fixes all masses to PDG values
   auto mass_recipe = [](KinematicsProcessor& p) {
@@ -125,13 +140,11 @@ void ProcessRecTruthYCombi() {
     p.PreModifier().FixMass("pip", M_pi());
     p.PreModifier().FixMass("pim", M_pi());
     p.PreModifier().FixMass("p", M_pro());
-    //p.PreModifier().FixMass("miss", M_pro());
   
     //Fix reconstructed Jpsi mass after it is calculted
     p.PostModifier().FixMass("Jpsi", M_Jpsi());
-
-    
   };
+  
   // Apply Mass Corrections to REC stream ONLY
   mgr.ConfigureKinematics(Rec(), mass_recipe);
 
@@ -143,7 +156,6 @@ void ProcessRecTruthYCombi() {
   // Apply Corrections to REC calE stream ONLY
   mgr.ConfigureKinematics(Rec()+"calE", correction_recipe);
 
-    
   // [C] SELECTION CUTS
   // Applied to Rec stream (Primary). Determines which combinations are saved.
   // Can use variables defined in kinematics recipe
@@ -154,8 +166,6 @@ void ProcessRecTruthYCombi() {
     s.AddCutMin("Jpsi_mass_cut", "MassJ",     2.8);          
   };
 
-  // Apply Cuts to Rec_base only
-  //mgr.ConfigureSelection(Rec()+"base", selection_recipe);
   // Apply Cuts to ALL
   mgr.ConfigureSelection(selection_recipe);
 
@@ -172,23 +182,13 @@ void ProcessRecTruthYCombi() {
   // Apply Histograms to ALL streams
   mgr.ConfigureHistograms(histogram_recipe);
   
-  // [D] TREES
+  // [E] TREES
   rad::rdf::PrintParticles(rad_df, Rec());
   rad::rdf::PrintParticles(rad_df, Truth());
-  mgr.Snapshot({consts::TruthMatchedCombi()});//currently need to add isTruth branch
+  mgr.Snapshot({consts::TruthMatchedCombi()});
 
-  
   // Print diagnostics BEFORE running expensive event loop
   std::cout << "\n=== CHECKING ANALYSIS SETUP ===\n" << std::endl;
-  //Diagnostics helpers
-  // rad::rdf::PrintParticles(rad_df, Truth());
-  // rad::rdf::PrintParticles(rad_df, Rec());
-  //rad::PrintDefinedColumnNames(mgr.Reaction().CurrFrame());
-  //mgr.PrintDiagnostics();
-  //PrintDefinedColumnNames will give a list of all columns we can print at this point
-  //optional 3rd argument = number of events to print for
-  //PrintColumnValues(mgr.Reaction(),{"rec_scat_ele_pz","rec_scat_ele_theta"},10);
-
   
   // =================================================================================
   // 3. RUN IT ALL 
@@ -197,4 +197,203 @@ void ProcessRecTruthYCombi() {
   mgr.Run();
   gBenchmark->Stop("analysis");
   gBenchmark->Print("analysis");
- }
+}// #include "AnalysisManager.h"
+// #include "ePICReaction.h"
+// #include "KinematicsProcElectro.h"
+// #include "ElectronScatterKinematics.h"
+// #include "BasicKinematicsRDF.h"
+// #include <TBenchmark.h>
+
+// /**
+//  * @brief Analysis Example: Y(4260) -> J/psi pi+ pi-
+//  * * Strategy:
+//  * 1. Define base processor for given ReconstructedParticles.
+//  * 2. Define additoinal processor for using cluster energy for e+,e-
+//  * 3. Produce and analyse all valid combinations
+//  */
+// void ProcessRecTruthYCombi() {
+//   //ROOT::EnableImplicitMT();
+
+//   using namespace rad;
+//   using namespace rad::consts::data_type; 
+
+//   gBenchmark->Start("df");
+
+//   //Define template ConfigReaction and KinematicsProcessor for ePIC analysis
+//   using Reaction = epic::ePICReaction;
+//   using Processor = KinematicsProcElectro;
+  
+//   // =================================================================================
+//   // 1. SETUP & MATCHING
+//   // =================================================================================
+//   AnalysisManager<Reaction,Processor>  mgr{
+//     "Y4260",
+//     "events",
+//     "/home/dglazier/Dropbox/EIC/Spectroscopy/SpectroscopyWorkshop25/Y/data/jpac_y4260_18_275_10day_*_recon.root"};
+
+//   mgr.SetOutputDir("output2");
+//   auto& rad_df = mgr.Reaction();
+
+//   //Indices of electron,ion in MCParticles
+//   rad_df.SetBeamsFromMC(0, 1); 
+//   rad_df.SetupMatching(); 
+
+//   //Truth Ordering in MCParticles vector
+//   const int Role_ScatEle  = 2; 
+//   const int Role_Recoil   = 3; // Proton
+//   const int Role_PiM      = 4; 
+//   const int Role_PiP      = 5; 
+//   const int Role_DecayEle = 6; 
+//   const int Role_DecayPos = 7; 
+
+//    //arguments (name, truth_idx, candidate list function, arguments for list function)
+//   rad_df.SetParticleCandidates(consts::ScatEle(), Role_ScatEle, rad::index::FilterIndices(11), {"rec_true_pid"});
+//   rad_df.SetParticleCandidates("ele", Role_DecayEle, rad::index::FilterIndices(11),  {"rec_true_pid"}); 
+//   rad_df.SetParticleCandidates("pos", Role_DecayPos, rad::index::FilterIndices(-11), {"rec_true_pid"}); 
+//   rad_df.SetParticleCandidates("pip", Role_PiP, rad::index::FilterIndices(211),  {"rec_true_pid"}); 
+//   rad_df.SetParticleCandidates("pim", Role_PiM, rad::index::FilterIndices(-211), {"rec_true_pid"}); 
+//   rad_df.SetParticleCandidates("p", Role_Recoil, rad::index::FilterIndices(2212), {"rec_true_pid"}); 
+
+//   //create indices for each combination, based in given candidates
+//   rad_df.MakeCombinations();
+
+//   //Add different processing streams for these combi events
+//   mgr.AddStream(Rec(),"base"); //base rec stream
+//   mgr.AddStream(Truth(),"base"); //base tru stream
+//   mgr.AddStream(Rec(),"calE"); //rec stream using calorimeter energies for e+e-
+
+//   // --- Auxiliary Data Handling ---
+//   //collect and associate cluster energies with particles
+//   //rec_cal_energy will be synched with momentum ordering
+//   rad_df.DefineAssociation("clusters", {"EcalBarrelClusters", "EcalEndcapPClusters"}, "energy");
+//   rad_df.DefineProjection("rec_cal_energy", "rec_clusters_energy", "rad::util::First");
+
+
+//   // =================================================================================
+//   // 2. ANALYSIS CONFIGURATION 
+//   // =================================================================================
+   
+//   // [A] SHARED KINEMATICS (Topology)
+//   // Applied to both Rec and Truth streams. Defines the decay chain.
+//   auto topology_recipe = [](Processor& p) {
+//     using namespace consts;
+//     // 1. Reconstruct J/psi -> e+ e-
+//     // A. Topological Construction
+//     p.Creator().Sum("Jpsi", {{"ele", "pos"}});       
+//     p.Creator().Sum("TwoPi", {{"pip", "pim"}});       
+//     p.Creator().Sum("Y",    {{"Jpsi", "TwoPi"}});
+//     // p.Creator().Diff("Miss",    {{BeamEle(),BeamIon()},{"Jpsi", "TwoPi"}});
+//     p.Creator().Diff("Miss",    {{BeamEle(),BeamIon()},{"Jpsi", "TwoPi","p"}});
+  
+//     p.SetMesonParticles({"Jpsi","TwoPi"});
+//     p.SetBaryonParticles({"p"});
+//     //p.SetBaryonParticles({"Miss"});
+    
+//     // 3. Calculate Invariant Masses
+//     p.Mass("MassJ",     {"ele","pos"});             
+//     //   p.Mass("MassJ",     {"Jpsi"});//fix mass in postmodifer             
+//     p.Mass("MassTwoPi",     {"TwoPi"});             
+//     p.Mass("MassY",     {"Y"});             
+//     p.Mass2("MissMass2",     {"Miss"});             
+
+//     p.Q2();
+    
+//     //4. Calculate Mandelstam t (requires beam definition)
+//     p.RegisterCalc("tb", rad::physics::TBot);
+//     p.RegisterCalc("DeltaPhiYxP", rad::DeltaPhi,{{"Y","p"}});
+    
+//     p.ParticleTheta({"scat_ele","Y"});
+//     p.ParticlePhi({"scat_ele","Y"});
+//     p.ParticleP({"scat_ele","Y"});
+    
+//   };
+
+//   // Apply Topology to ALL streams
+//   mgr.ConfigureKinematics(topology_recipe);
+
+  
+//   // [B] (i) Apply some pre and post momentum organising modifiers
+//   // Fixes all masses to PDG values
+//   auto mass_recipe = [](KinematicsProcessor& p) {
+//     using namespace consts;
+//     //use PDG mas values for all particles in case
+//     //they were PIDed wrong
+//     p.PreModifier().FixMass(ScatEle(), M_ele());
+//     p.PreModifier().FixMass("ele", M_ele());
+//     p.PreModifier().FixMass("pos", M_ele());
+//     p.PreModifier().FixMass("pip", M_pi());
+//     p.PreModifier().FixMass("pim", M_pi());
+//     p.PreModifier().FixMass("p", M_pro());
+//     //p.PreModifier().FixMass("miss", M_pro());
+  
+//     //Fix reconstructed Jpsi mass after it is calculted
+//     p.PostModifier().FixMass("Jpsi", M_Jpsi());
+
+    
+//   };
+//   // Apply Mass Corrections to REC stream ONLY
+//   mgr.ConfigureKinematics(Rec(), mass_recipe);
+
+//   // (ii) Corrects electron momentum using ECal energy.
+//   auto correction_recipe = [](KinematicsProcessor& p) {
+//     p.PreModifier().SetMomentumFrom("ele", "rec_cal_energy");
+//     p.PreModifier().SetMomentumFrom("pos", "rec_cal_energy");
+//   };
+//   // Apply Corrections to REC calE stream ONLY
+//   mgr.ConfigureKinematics(Rec()+"calE", correction_recipe);
+
+    
+//   // [C] SELECTION CUTS
+//   // Applied to Rec stream (Primary). Determines which combinations are saved.
+//   // Can use variables defined in kinematics recipe
+//   auto selection_recipe = [](PhysicsSelection& s) {
+//     // Wide window for Y(4260)
+//     s.AddCutRange("Y_mass_cut",    "MassY", 3.5, 4.5); 
+//     // Loose cut for J/psi
+//     s.AddCutMin("Jpsi_mass_cut", "MassJ",     2.8);          
+//   };
+
+//   // Apply Cuts to Rec_base only
+//   //mgr.ConfigureSelection(Rec()+"base", selection_recipe);
+//   // Apply Cuts to ALL
+//   mgr.ConfigureSelection(selection_recipe);
+
+//   // [D] HISTOGRAMS
+//   // Shared definitions for Rec and Truth.
+//   auto histogram_recipe = [](histo::Histogrammer& h) {
+//     h.Create("hQ2",     "Q^{2}; [GeV]", 100, 0, 1.0, "Q2");
+//     h.Create("hMassJ",     "Invariant Mass e+e-;  [GeV]", 100, 2.0, 4.0, "MassJ");
+//     h.Create("hMassTwoPi",     "Invariant Mass 2#pi; [GeV]", 100, 0, 2, "MassTwoPi");
+//     h.Create("hMassY",     "Invariant Mass J/#psi 2#pi; [GeV]", 100, 2.0, 6.0, "MassY");
+//     h.Create("hMissMass2",     "Missing Mass squared; [GeV]", 1000, -50, 50, "MissMass2");
+//   };
+ 
+//   // Apply Histograms to ALL streams
+//   mgr.ConfigureHistograms(histogram_recipe);
+  
+//   // [D] TREES
+//   rad::rdf::PrintParticles(rad_df, Rec());
+//   rad::rdf::PrintParticles(rad_df, Truth());
+//   mgr.Snapshot({consts::TruthMatchedCombi()});//currently need to add isTruth branch
+
+  
+//   // Print diagnostics BEFORE running expensive event loop
+//   std::cout << "\n=== CHECKING ANALYSIS SETUP ===\n" << std::endl;
+//   //Diagnostics helpers
+//   // rad::rdf::PrintParticles(rad_df, Truth());
+//   // rad::rdf::PrintParticles(rad_df, Rec());
+//   //rad::PrintDefinedColumnNames(mgr.Reaction().CurrFrame());
+//   //mgr.PrintDiagnostics();
+//   //PrintDefinedColumnNames will give a list of all columns we can print at this point
+//   //optional 3rd argument = number of events to print for
+//   //PrintColumnValues(mgr.Reaction(),{"rec_scat_ele_pz","rec_scat_ele_theta"},10);
+
+  
+//   // =================================================================================
+//   // 3. RUN IT ALL 
+//   // =================================================================================
+//   gBenchmark->Start("analysis");
+//   mgr.Run();
+//   gBenchmark->Stop("analysis");
+//   gBenchmark->Print("analysis");
+//  }

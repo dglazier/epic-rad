@@ -524,7 +524,7 @@ inline void ePICReaction::SetupTruth(Bool_t isEnd) {
                 // 3. Map the subdetector's raw truth hits to the filtered truth IDs
                 int max_mapped_sim = -1;
                 for (size_t raw_idx : subdet_sim_idx) {
-                    if (raw_idx >= 0 && raw_idx < nTru0) {
+                    if (raw_idx < nTru0) {
                         int mapped_idx = map[raw_idx];
                         if (mapped_idx > max_mapped_sim) max_mapped_sim = mapped_idx;
                     }
@@ -536,7 +536,7 @@ inline void ePICReaction::SetupTruth(Bool_t isEnd) {
                 // Create the fast O(1) lookup table for mapped truth indices
                 std::vector<bool> subdet_saw_truth(max_mapped_sim + 1, false);
                 for (size_t raw_idx : subdet_sim_idx) {
-                    if (raw_idx >= 0 && raw_idx < nTru0) {
+                    if (raw_idx < nTru0) {
                         int mapped_idx = map[raw_idx];
                         if (mapped_idx >= 0) subdet_saw_truth[mapped_idx] = true;
                     }

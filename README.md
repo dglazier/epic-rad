@@ -1,180 +1,158 @@
-# Reaction Aware (R)DataFrames
+# ePIC-RAD: Reaction Analysis & Design for ePIC
 
-For processing specific electron scattering reactions with podio style data.
+**A Dedicated ePIC/EDM4hep Extension for the RAD Framework**
 
-Goals :
+ePIC-RAD is an extension of the base RAD framework specifically tailored for processing electron scattering reactions using PODIO/EDM4hep style data. It abstracts the complexities of detector hits, truth matching, and combinatorics into a high-level declarative API.
 
+### Project Goals
 1. Simplifying analysis code for general final states.
-2. Same code for different types of data, e.g. HepMC, ePIC.
-3. No additional dependencies (ROOT only), no build (header only, parsed by root at runtime).
-4. Simply define the final state particles then use standardised functions to add columns/branches to output, 1 line of code per branch.
-5. Hide boilerplate and C++isms from user.
-6. Automate MC matching and calculation of equivalent truth variables.
-7. Automate combinitorial analysis (!!! To be done)
+2. Maintaining the same code structure for different types of data (e.g., HepMC, ePIC).
+3. Requiring no additional dependencies beyond ROOT, with no build system required (header-only, parsed by ROOT at runtime).
+4. Defining final state particles and standardizing branch outputs with minimal lines of code.
+5. Hiding boilerplate and low-level C++ mechanics from the user.
+6. Automating MC matching, the calculation of equivalent truth variables, and full combinatorial analysis.
 
-To install just download the code from git and add the path to ROOT_INCLUDE_PATH
-If you do not have the base rad code already installed you can add it as a submodule
+---
 
-      git clone --recurse-submodules https://github.com/dglazier/epic-rad.git
-      setenv EPICRAD /to/where/is/epic-rad
-      setenv RAD ${EPICRAD}/rad
+## ⚡ Installation
 
-If RAD is installed already you do not need to download the submodule
+To install, simply download the code from Git and add the paths to your `ROOT_INCLUDE_PATH`. 
 
-      git clone https://github.com/dglazier/epic-rad.git
-      setenv EPICRAD /to/where/is/epic-rad
-      setenv RAD /to/where/is/rad
+If you do not have the base `rad` code already installed, you can clone it simultaneously as a submodule:
+```bash
+git clone --recurse-submodules [https://github.com/dglazier/epic-rad.git](https://github.com/dglazier/epic-rad.git)
+export EPICRAD=/path/to/epic-rad
+export RAD=${EPICRAD}/rad
+```
 
-In either case you then need to add the include path to ROOT_INCLUDE_PATH so the files are visibel in an interactive root session.
+If you already have `rad` installed elsewhere on your system, you can clone just the extension:
+```bash
+git clone [https://github.com/dglazier/epic-rad.git](https://github.com/dglazier/epic-rad.git)
+export EPICRAD=/path/to/epic-rad
+export RAD=/path/to/existing/rad
+```
 
-      setenv ROOT_INCLUDE_PATH ${RAD}/include:${EPICRAD}/include
-      or
-      setenv ROOT_INCLUDE_PATH ${ROOT_INCLUDE_PATH}:${RAD}/include:${EPICRAD}/include
-      
-  Example code :
+Finally, make the headers visible to your interactive ROOT session by appending them to your include path:
+```bash
+export ROOT_INCLUDE_PATH=${ROOT_INCLUDE_PATH}:${RAD}/include:${EPICRAD}/include
+```
 
-        // create an epic reaction
-        rad::config::ePICReaction epic{"events", "data_file.root");
-        //choose processing scheme i.e. match reconstructed and generated events
-        epic.AliasColumnsAndMatchWithMC(false);
-        //Assign particles names and indices
-        //indicing comes from ordering in hepmc file as we matched Sim and Rec.
-        epic.setBeamIonIndex(rad::beams::BeamEleFix());
-        epic.setBeamElectronIndex(rad::beams::BeamIonFix());
-        epic.setScatElectronIndex(1);
-        //give final state hadrons names,
-        //if we give a PDG code it will generate el_OK branches etc
-        //el_OK = 1 if electron reconstructed with right PDG
-        epic.setParticleIndex("el",6,11);
-        epic.setParticleIndex("po",7,-11);
-        epic.setParticleIndex("p",5,2212);
-        
-        //Group particles into top and bottom vertices
-        //aka Meson and Baryon components
-        //this is required for calcualting reaction kinematics
-        //e.g. t distributions
-        epic.setBaryonParticles({"p"});
-        epic.setMesonParticles({"el","po"});
+---
 
-        //must call this after all particles are configured
-        epic.makeParticleMap();
+## 🚀 Quick Start Example
 
-        //create column for invariant mass of e+ and e-
-        rad::rdf::Mass(epic,"IMass","{el,po}");
+Here is a complete analysis steering macro reconstructing $Y(4260) \to J/\psi(\to e^+e^-) \pi^+ \pi^-$. This demonstrates the core workflow: setting up the data, extracting detector hits, generating combinations, and defining kinematics.
 
-        // we can now add further columns, make a snapshot or draw a histogram
-        // draw a histogram. Not I must prepend rec_ or tru_ to get the reconstructed or truth variable
-        auto df0 = epic.CurrFrame(); //get the current dataframe node. Now operate like regular RDataFrame
-        auto hInvMassRec = df0.Histo1D({"InvMassRec","Recon M(e-,e+) [GeV]",100,.3,5.},"rec_IMass");
-        auto hInvMassTru = df0.Histo1D({"InvMassTru","Truth M(e-,e+) [GeV]",100,.3,5.},"tru_IMass");
-        hInvMassRec->DrawCopy();
-        hInvMassTrue->DrawCopy("same");
+```cpp
+#include "AnalysisManager.h"
+#include "ePICReaction.h"
+#include "ePICAssociationsManager.h" 
+#include "KinematicsProcElectro.h"
 
-The matching generated with reconstructed is the simplest analysis for simulated data. However to be more 
-realistic you need to add algorithms for choosing which particle is associated with your defined final state particles.
-Some examples of this are given in the examples! e.g. choose the first electron in ReconstructedParticles for the scattered electron, 
-or choose the electron with the highest momentum. Ultimately this will require full combinitiral analysis to be implemented.
+void Analysis() {
+  // 1. Initialize Reaction & Data Source
+  // ePICReaction handles Podio file reading and Rec-to-Truth matching automatically
+  rad::AnalysisManager<epic::ePICReaction, rad::KinematicsProcElectro> mgr{
+    "Y4260", "events", "input_data/*_recon.root"
+  };
+  
+  auto& rad_df = mgr.Reaction();
+  rad_df.SetBeamsFromMC(0, 1); 
+  rad_df.SetupMatching(); 
 
-To find the mcmatch index, you need to know the order of the particles in the hepmc3 file. This can be found by checking the MCParticles branch in the reconstructed tree. Open the file in root and get events tree,
+  // 2. Auxiliary Data (Detector Associations)
+  // Extract calorimeter energies and dynamically pad them to sync with combinatorial tracks
+  epic::ePICAssociationManager assoc(rad_df);
+  assoc.For("Central")
+       .From({"EcalBarrelClusters", "EcalEndcapPClusters", "EcalEndcapNClusters"})
+       .Extract("energy")
+       .As("cal_energy"); 
+  assoc.Build(); 
 
-      events->Scan("MCParticles.PDG:MCParticles.generatorStatus")
+  // 3. Define Candidates (Name, MC_Role_ID, Filter, Columns)
+  rad_df.SetParticleCandidates(rad::consts::ScatEle(), 2, rad::index::FilterIndices(11), {"rec_true_pid"});
+  rad_df.SetParticleCandidates("ele", 6, rad::index::FilterIndices(11),  {"rec_true_pid"}); 
+  rad_df.SetParticleCandidates("pos", 7, rad::index::FilterIndices(-11), {"rec_true_pid"}); 
+  rad_df.SetParticleCandidates("pip", 5, rad::index::FilterIndices(211), {"rec_true_pid"}); 
+  rad_df.SetParticleCandidates("pim", 4, rad::index::FilterIndices(-211),{"rec_true_pid"}); 
+  rad_df.SetParticleCandidates("p",   3, rad::index::FilterIndices(2212),{"rec_true_pid"}); 
 
-      ***********************************************
-      *    Row   * Instance * MCParticl * MCParticl *
-      ***********************************************
-      *        0 *        0 *        11 *         4 *
-      *        0 *        1 *      2212 *         4 *
-      *        0 *        2 *        11 *         1 *
-      *        0 *        3 *       -11 *         1 *
-      *        0 *        4 *       211 *         1 *
-      *        0 *        5 *      2112 *         1 *
-      *        0 *        6 *        11 *         1 *
-      *        0 *        7 *        11 *         0 *
-      *        0 *        8 *        22 *         0 *
-      *        0 *        9 *        11 *         0 *
-      *        0 *       10 *        11 *         0 *
-      *        0 *       11 *        22 *         0 *
-      *        0 *       12 *        22 *         0 *
-      *        0 *       13 *        22 *         0 *
+  // 4. Generate All Unique Combinations
+  rad_df.MakeCombinations();
 
+  // 5. Setup Processing Streams
+  mgr.AddStream(rad::consts::data_type::Rec(), "base");
+  mgr.AddStream(rad::consts::data_type::Truth(), "base");
 
-The particles with generatorStatus = 4 are the beams. generatorStatus=1 are the final state particles which have been thrown in genat4. generatorStatus=0 are secondaries which should be ignored. You can match the Status=1 PDG values with the particles in your reaction.
+  // 6. Configure Kinematics (Topology & Variables)
+  auto topology_recipe = [](rad::KinematicsProcElectro& p) {
+    using namespace rad::consts;
+    
+    // Topological Construction
+    p.Creator().Sum("Jpsi", {{"ele", "pos"}});       
+    p.Creator().Sum("TwoPi", {{"pip", "pim"}});       
+    p.Creator().Sum("Y",    {{"Jpsi", "TwoPi"}});
+    p.Creator().Diff("Miss", {{BeamEle(), BeamIon()}, {"Jpsi", "TwoPi", "p", ScatEle()}});
+    
+    // Invariant Masses & Physics
+    p.Mass("MassJ", {"ele","pos"});             
+    p.Mass("MassY", {"Y"});             
+    p.Q2();
+    p.RegisterCalc("tb", rad::physics::TBot, {{BeamIon(), "p"}});
 
+    //  Calculate Mandelstam t and other injected calculations
+    p.RegisterCalc("tb", rad::physics::TBot);
+    p.RegisterCalc("DeltaPhiYxP", rad::DeltaPhi, {{"Y","p"}});
+    
+    p.ParticleTheta({"scat_ele","Y","ele","pos"});
+    p.ParticlePhi({"scat_ele","Y","ele","pos"});
+    p.ParticleP({"scat_ele","Y","ele","pos"});
 
-
-## Developing your own column calculations
-
-To create the user-friendly function rad::rdf::Mass etc, requires 2 steps. Currently this is organised in 2 seperate files.
-One for the raw C++ calculation, the other to interface this to RDataFrame via a Define call. When developing your own 
-calculations you should try and group them in physics processes, for example a file for compton scattering kinematic calculations.
-Lets look at an example, MissMass : given some final state particles, these are subtracted from the sum of the beams and the 
-resulting mass is returned. First I must define the c++ function (see include/ReactionKinematics.h),
-
-    template<typename Tp, typename Tm>
-    Tp MissMass(const config::RVecIndexMap& react,const RVecI &ineg,const RVec<Tp> &px, const RVec<Tp> &py, const RVec<Tp> &pz, const RVec<Tm> &m)
-    { 
-      auto psum = beams::BeamIonFourVector(react[names::BeamIonIdx()][0],px,py,pz,m);
-      psum+=beams::BeamEleFourVector(react[names::BeamEleIdx()][0],px,py,pz,m);
-      SubtractFourVector(psum,ineg,px,py,pz,m);
-      return psum.M();
-    }
-
-Here we see some C++ stuff that we want to hide from users, like templating the vectors, this protects against their types changing 
-from float to double for example. The type Tp and Tm are deduced at run time and the types of momentum and mass arrays can be different.
-To sum the beams we start with the ion beams:: means this function is defined in Beams.h, BeamIonFourVector returns either a fixed 
-4-vector which you must have defined at the start of your script, or if you define your beam with an indice, the value given for that 
-event, this can be useful for processing simulated or generated data.
-The function SubtractFourVector is part of BasicKinematics.h and it just subtracted the four-momentum components indiced in ineg,
-which the user will define in their script.
-Note the object react which is RVecIndex map allows you to find the indice for specific parts of your final state. The approriate functions to use as a key in the map are given in [DefineNames](https://github.com/dglazier/rad/blob/master/include/DefineNames.h) . So you can replace BeamIonIdx with any of the other Idx functions to get the indices for those particles.
-
-Second in ReactionKinemticsRDF.h we interface to RDataFrame :
-
-    void MissMass(config::ConfigReaction& cr,const string& name, const string_view neg){
-      cr.DefineForAllTypes(name, Form("rad::MissMass(%s,%s,components_p4)",names::ReactionMap().data(),neg.data()));
-    }
-
-Note components_p4 => px,py,pz,pm. Using components_p4 allows DefineForAllTypes to switch in the approriate componenets for rec or truth. 
-
-Here use of DefineForAllTypes adds columns for both rec_ and tru_ variables. "name" will be the name of the new column, and neg
-is the list of particles to be subtracted e.g. "{el,po}" . rad is able to use this to find the actual index of the electron and 
-positron for the event and subtract those particles.
-
-When creating these 2 files you should adhere to the namespacing convention. c++ functions are in namespace rad, Rdataframe 
-interfaces are in namespace rad::rdf.
+    // Auxiliary Passthrough
+    // Pulls the perfectly unified auxiliary column directly into the Flat output tree
+    p.PassThrough("ele", "rec_cal_energy", "_cal_energy");
+    p.PassThrough("pos", "rec_cal_energy", "_cal_energy"); 
  
+  };
+  mgr.ConfigureKinematics(topology_recipe);
 
-# Snapshot Tree
+  // 7. Save Flat Tree
+  mgr.Snapshot({rad::consts::TruthMatchedCombi()});
+  
+  // 8. Run Event Loop
+  mgr.Run();
+}
+```
 
-If you create a snapshot via something like
+---
 
-      epic.Snapshot("output.root");
+## 🧩 ePIC & Podio Integration
 
-Then the tree will contain all aliased or nnewly defined columns. In particular momentum components and any calculation which was requested. The tree will just be flat single entry per calculation, and multi-entries for momentum components, one for each particle. If you are using MCMatching there will be both a truth branch and reconstructed, allowing you to determine resolutions of all quantities etc. To access a particular particles components you just need to index by the name you gave it e.g.
+### 1. Truth Matching
+In EDM4hep, Rec-to-Truth links are stored in separate association arrays. `ePICReaction` traverses these arrays automatically. By providing a "Truth Role ID" when defining your particle candidates (e.g., `SetParticleCandidates("ele", 6, ...)`), the framework will automatically generate truth-matching flags like `TruthMatchedCombi()`.
 
-      //plot the reconstructed momentum of the electron
-      rad_tree->Draw("rec_pmag[el]>>p(100,0,20)");
-      //plot the truth W
-      rad_tree->Draw("tru_W>>w(100,0,50)");
+### 2. Auxiliary Detector Data
+ePIC-RAD introduces a robust Fluent Builder API (`ePICAssociationManager`) to seamlessly unpack nested PODIO One-To-Many relations.
 
+Instead of dealing with raw 2D arrays, you can extract specific detector hits (like cluster energies or track times) and project them directly onto your physics tracks:
+```cpp
+epic::ePICAssociationManager assoc(rad_df);
 
+assoc.For("Central")
+     .From({"EcalBarrelClusters", "EcalEndcapPClusters"})
+     .Extract("energy")
+     .As("cal_energy");
 
-## Matching detector information
+assoc.Build(); 
+```
+This automatically produces a padded, flat RDataFrame column (`rec_cal_energy`) that perfectly synchronizes with the combinatorial engine, using `NaN` safely where tracks lack detector hits. You can then pass this into your kinematics processor to correct momenta on the fly.
 
-For ePIC analysis we can match the detector information to each particle.
-To do this you must use the ePICDetectorReaction rather than just ePICReaction.
-To specify what information you want to use (for example to save linked info synchronised to tree) :
+---
 
-       //Add some detector associations
-       //From TaggerTrackerTracks use "momentum.x"
-       epic.AssociateTracks({"TaggerTrackerTracks"},
-   		       {"momentum.x"});
-       //From various calorimeters use "energy"	       
-       epic.AssociateClusters({"EcalBarrelClusters","EcalBarrelImagingClusters",
-       	"EcalBarrelScFiClusters",
-      	"EcalEndcapNClusters","EcalEndcapPClusters","EcalEndcapPInsertClusters",
-      	"HcalBarrelClusters","HcalEndcapNClusters","LFHCALClusters",
-      	"EcalFarForwardZDCClusters","HcalFarForwardZDCClusters"},
-    	{"energy"});
- 
+## 📁 Output Structure
 
+The framework utilizes `SnapshotCombi` to safely output complex multi-particle data from multi-threaded execution environments using `ROOT::TBufferMerger`.
+
+The resulting `TTree` is **flat** and strictly analysis-friendly:
+* **Scalars:** Event-level variables (e.g., Beam Energy, Q2) are broadcasted and repeated for every valid combination in the event.
+* **Vectors:** Combinatorial variables (e.g., specific particle momenta) are flattened so that 1 Tree Entry = 1 Combination hypothesis.
