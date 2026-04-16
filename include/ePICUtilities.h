@@ -98,7 +98,66 @@ namespace rad {
         }
         return out;
     }
+  // Internal template implementation
+    template <typename Tp, typename Tm>
+    inline void DefineCrossingAngleCorrectionImpl(
+        rad::ConfigReaction* reaction,
+        const std::string& prefix,
+        const std::string& pxCol, const std::string& pyCol, const std::string& pzCol, const std::string& mCol,
+        const rad::epic::PxPyPzMVector& ionP4, const rad::epic::PxPyPzMVector& eleP4) 
+    {
+        // 1. Initialize Transformer
+        rad::epic::UndoAfterBurn<Tp, Tm> transformer(ionP4, eleP4);
+        
+        std::string dnw = DoNotWriteTag();
+        std::string vecName = prefix + "corr_vec" + dnw;
+        
+        // 2. Define the Vector Transformer
+        reaction->Define(vecName, 
+            [transformer](const ROOT::RVec<Tp>& px, const ROOT::RVec<Tp>& py, const ROOT::RVec<Tp>& pz, const ROOT::RVec<Tm>& m) {
+                return transformer(px, py, pz, m);
+            }, 
+            {pxCol, pyCol, pzCol, mCol});
 
+        // 3. Extract Components
+        reaction->Define(prefix + "corr_px" + dnw, [](const ROOT::RVec<rad::epic::PxPyPzEVector>& v){ 
+            ROOT::RVecD out(v.size()); for(size_t i=0;i<v.size();++i) out[i] = v[i].Px(); return out; 
+        }, {vecName});
+        
+        reaction->Define(prefix + "corr_py" + dnw, [](const ROOT::RVec<rad::epic::PxPyPzEVector>& v){ 
+            ROOT::RVecD out(v.size()); for(size_t i=0;i<v.size();++i) out[i] = v[i].Py(); return out; 
+        }, {vecName});
+        
+        reaction->Define(prefix + "corr_pz" + dnw, [](const ROOT::RVec<rad::epic::PxPyPzEVector>& v){ 
+            ROOT::RVecD out(v.size()); for(size_t i=0;i<v.size();++i) out[i] = v[i].Pz(); return out; 
+        }, {vecName});
+    }
+
+    /**
+     * @brief High-level utility to apply the Head-On frame crossing angle correction to any particle collection.
+     * @details Automatically deduces column types and defines `[prefix]corr_px/py/pz` columns.
+     */
+    inline void ApplyCrossingAngleCorrection(
+        rad::ConfigReaction* reaction,
+        const std::string& prefix,
+        const std::string& pxCol, const std::string& pyCol, const std::string& pzCol, const std::string& mCol,
+        const rad::epic::PxPyPzMVector& ionP4, const rad::epic::PxPyPzMVector& eleP4) 
+    {
+        auto typeP = rad::DeduceColumnVectorType(reaction, pxCol);
+        auto typeM = rad::DeduceColumnVectorType(reaction, mCol);
+
+        if (typeP == rad::ColType::Float && typeM == rad::ColType::Float) 
+            DefineCrossingAngleCorrectionImpl<float, float>(reaction, prefix, pxCol, pyCol, pzCol, mCol, ionP4, eleP4);
+        else if (typeP == rad::ColType::Double && typeM == rad::ColType::Double) 
+            DefineCrossingAngleCorrectionImpl<double, double>(reaction, prefix, pxCol, pyCol, pzCol, mCol, ionP4, eleP4);
+        else if (typeP == rad::ColType::Float && typeM == rad::ColType::Double) 
+            DefineCrossingAngleCorrectionImpl<float, double>(reaction, prefix, pxCol, pyCol, pzCol, mCol, ionP4, eleP4);
+        else if (typeP == rad::ColType::Double && typeM == rad::ColType::Float) 
+            DefineCrossingAngleCorrectionImpl<double, float>(reaction, prefix, pxCol, pyCol, pzCol, mCol, ionP4, eleP4);
+        else 
+            throw std::runtime_error("ApplyCrossingAngleCorrection: Cannot deduce column types for " + pxCol);
+    }
+    
   } // namespace epic
 } // namespace rad
 

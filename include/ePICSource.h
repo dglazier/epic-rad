@@ -47,13 +47,7 @@ namespace rad {
       void Process(TReaction* reaction, rad::ParticleInjector& injector, bool truthMatched);
 
     private:
-      /** @brief Internal helper to dispatch the crossing-angle correction. */
-      void ApplyCorrection(TReaction* reaction);
-
-      /** @brief Implementation of correction for specific types. */
-      template <typename Tp, typename Tm>
-      void ApplyCorrectionImpl(TReaction* reaction);
-
+    
       std::string _branch;    ///< Raw EDM4hep branch name
       std::string _prefix;    ///< Internal RAD prefix
       int _detID=-1;             ///< Numerical ID for detector identification
@@ -79,9 +73,13 @@ namespace rad {
       
       // 1. Calculate crossing-angle corrected columns if requested
       if (_isCorrected) {
-          ApplyCorrection(reaction);
+	rad::epic::ApplyCrossingAngleCorrection(
+						reaction, _prefix,
+						_branch + ".momentum.x", _branch + ".momentum.y", _branch + ".momentum.z", _branch + ".mass",
+						reaction->GetBeamIonP4(), reaction->GetBeamElectronP4()
+						);
       }
-
+      
       // 2. Define Detector ID
       reaction->Define(_prefix + "det_id" + dnw, 
           Form("return ROOT::RVecI(%s.momentum.x.size(), %d);", _branch.c_str(), _detID));
@@ -121,43 +119,7 @@ namespace rad {
       injector.AddSource(rad::consts::data_type::Rec(), cols, filter);
     }
 
-    template <typename TReaction>
-    inline void ePICSource<TReaction>::ApplyCorrection(TReaction* reaction) {
-        // Use rad::DeduceColumnVectorType utility directly
-        auto typeP = rad::DeduceColumnVectorType(reaction, _branch + ".momentum.x");
-        auto typeM = rad::DeduceColumnVectorType(reaction, _branch + ".mass");
-
-        if (typeP == ColType::Float && typeM == ColType::Float) ApplyCorrectionImpl<float, float>(reaction);
-        else if (typeP == ColType::Double && typeM == ColType::Double) ApplyCorrectionImpl<double, double>(reaction);
-        else if (typeP == ColType::Float && typeM == ColType::Double) ApplyCorrectionImpl<float, double>(reaction);
-        else if (typeP == ColType::Double && typeM == ColType::Float) ApplyCorrectionImpl<double, float>(reaction);
-    }
-
-    template <typename TReaction>
-    template <typename Tp, typename Tm>
-    inline void ePICSource<TReaction>::ApplyCorrectionImpl(TReaction* reaction) {
-        // Get beams (now returning PxPyPzMVector)
-        rad::epic::UndoAfterBurn<Tp, Tm> transformer(reaction->GetBeamIonP4(), reaction->GetBeamElectronP4());
-        
-        std::string dnw = DoNotWriteTag();
-        std::string vecName = _prefix + "corr_vec" + dnw;
-        
-        reaction->Define(vecName, 
-            [transformer](const ROOT::RVec<Tp>& px, const ROOT::RVec<Tp>& py, const ROOT::RVec<Tp>& pz, const ROOT::RVec<Tm>& m){
-                return transformer(px, py, pz, m);
-            }, 
-            {_branch + ".momentum.x", _branch + ".momentum.y", _branch + ".momentum.z", _branch + ".mass"});
-
-        reaction->Define(_prefix + "corr_px" + dnw, [](const ROOT::RVec<rad::epic::PxPyPzEVector>& v){ 
-            ROOT::RVecD out(v.size()); for(size_t i=0;i<v.size();++i) out[i] = v[i].Px(); return out; 
-        }, {vecName});
-        reaction->Define(_prefix + "corr_py" + dnw, [](const ROOT::RVec<rad::epic::PxPyPzEVector>& v){ 
-            ROOT::RVecD out(v.size()); for(size_t i=0;i<v.size();++i) out[i] = v[i].Py(); return out; 
-        }, {vecName});
-        reaction->Define(_prefix + "corr_pz" + dnw, [](const ROOT::RVec<rad::epic::PxPyPzEVector>& v){ 
-            ROOT::RVecD out(v.size()); for(size_t i=0;i<v.size();++i) out[i] = v[i].Pz(); return out; 
-        }, {vecName});
-    }
+  
 
   } // namespace epic
 } // namespace rad
