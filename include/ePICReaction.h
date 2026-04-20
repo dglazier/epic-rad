@@ -216,7 +216,7 @@ namespace rad {
      * map to correctly pad auxiliary detector data (like ECal clusters) into the unified coordinate space.
      * * @param isEnd If true, finalize definitions. Default kTRUE.
      */
-    inline void ePICReaction::SetupReconstructed(Bool_t isEnd) {
+ inline void ePICReaction::SetupReconstructed(Bool_t isEnd) {
         // 1. Initialize data type and base kinematic columns
         AddType(Rec());
 
@@ -238,16 +238,32 @@ namespace rad {
         // 3. Inject Beams First (Indices 0 and 1, det_id = BEAM = 0)
         std::string bEle = Rec() + consts::BeamEle() + "_src_";
         std::string bIon = Rec() + consts::BeamIon() + "_src_";
+        std::string dnw = DoNotWriteTag();
 
+        // *** APPLY AFTERBURNER TO RECONSTRUCTED BEAMS ***
+        // By using bEle as the prefix, it safely generates: rec_beam_ele_src_corr_px__dnwtag
+        rad::epic::ApplyCrossingAngleCorrection(
+            this, bEle,
+            bEle + consts::NamePx(), bEle + consts::NamePy(), bEle + consts::NamePz(), bEle + consts::NameM(),
+            GetBeamIonP4(), GetBeamElectronP4()
+        );
+
+        rad::epic::ApplyCrossingAngleCorrection(
+            this, bIon,
+            bIon + consts::NamePx(), bIon + consts::NamePy(), bIon + consts::NamePz(), bIon + consts::NameM(),
+            GetBeamIonP4(), GetBeamElectronP4()
+        );
+
+        // Inject the corrected columns (corr_px/py/pz) instead of the raw ones
         ROOT::RVec<std::string> ele_cols = {
-            bEle + consts::NamePx(), bEle + consts::NamePy(), bEle + consts::NamePz(), 
-            bEle + consts::NameM(),  bEle + consts::NamePid(), 
+            bEle + "corr_px" + dnw, bEle + "corr_py" + dnw, bEle + "corr_pz" + dnw, 
+            bEle + consts::NameM(), bEle + consts::NamePid(), 
             "ROOT::RVecI{-1}", "ROOT::RVecI{0}" // Charge=-1 (Electron), DetID=0
         };
 
         ROOT::RVec<std::string> ion_cols = {
-            bIon + consts::NamePx(), bIon + consts::NamePy(), bIon + consts::NamePz(), 
-            bIon + consts::NameM(),  bIon + consts::NamePid(), 
+            bIon + "corr_px" + dnw, bIon + "corr_py" + dnw, bIon + "corr_pz" + dnw, 
+            bIon + consts::NameM(), bIon + consts::NamePid(), 
             "ROOT::RVecI{1}", "ROOT::RVecI{0}" // Charge=1 (Proton/Ion), DetID=0
         };
 
@@ -262,7 +278,6 @@ namespace rad {
         injector.AddSource(Rec(), ion_cols);
  
         // 4. Register Detectors to the Internal Map
-        // This decouples PODIO associations from the Reaction class.
         RegisterDetector("Central", "ReconstructedParticles", "Central_", CENTRAL);
         RegisterDetector("RP", "ForwardRomanPotRecParticles", "rp_", RP);
         RegisterDetector("ZDC", "ReconstructedFarForwardZDCNeutrons", "ZDC_", ZDC);
@@ -270,19 +285,16 @@ namespace rad {
         // 5. Inject Detectors via ePICSource Factory
         using Source = ePICSource<ePICReaction>;
         
-        // --- Central Tracker ---
         Source central(_detectors.at("Central").branch, _detectors.at("Central").prefix, _detectors.at("Central").id);
         central.SetIsCorrected(true); 
         central.SetMinP(0.3); 
         central.Process(this, injector, _truthMatched);
         
-        // --- Roman Pots ---
         Source rp(_detectors.at("RP").branch, _detectors.at("RP").prefix, _detectors.at("RP").id);
         rp.SetTargetPID(2212); 
         rp.SetMinP(1); 
         rp.Process(this, injector, _truthMatched);
         
-        // --- ZDC ---
         Source zdc(_detectors.at("ZDC").branch, _detectors.at("ZDC").prefix, _detectors.at("ZDC").id);
         zdc.SetTargetPID(2112); 
         zdc.SetIsCorrected(true); 
@@ -294,97 +306,65 @@ namespace rad {
         
         util::CountParticles(this, Rec());
         
-        if (isEnd) {
-            // Placeholder for end-of-setup logic
-        }
+        if (isEnd) { }
     }
-    
-inline void ePICReaction::SetupTruth(Bool_t isEnd) {
-    AddType(Truth());
-    
-    DefineBeamComponents(Truth());
-    SetBeamElectronIndex(_idxBeamEle, Truth());
-    SetBeamIonIndex(_idxBeamIon, Truth());
-
-    rad::ParticleInjector injector(this);
-    injector.DefineParticleInfo({"double px", "double py", "double pz", "double m", "int pid", "int genStat", "int charge"});
-    
-    std::string bEle = Truth() + consts::BeamEle() + "_src_";
-    std::string bIon = Truth() + consts::BeamIon() + "_src_";
-    
-    injector.AddSource(Truth(), {
-        bEle + consts::NamePx(), bEle + consts::NamePy(), bEle + consts::NamePz(), 
-        bEle + consts::NameM(),  bEle + consts::NamePid(), 
-        "ROOT::RVecI{4}", "ROOT::RVecI{-1}" 
-    });
-
-    injector.AddSource(Truth(), {
-        bIon + consts::NamePx(), bIon + consts::NamePy(), bIon + consts::NamePz(), 
-        bIon + consts::NameM(),  bIon + consts::NamePid(), 
-        "ROOT::RVecI{4}", "ROOT::RVecI{1}" 
-    });
-    
-    rad::epic::ApplyCrossingAngleCorrection(
-        this, Truth(),
-        "MCParticles.momentum.x", "MCParticles.momentum.y", "MCParticles.momentum.z", "MCParticles.mass",
-        GetBeamIonP4(), GetBeamElectronP4()
-    );
-
-    std::string dnw = DoNotWriteTag();
-    injector.AddSource(Truth(), {
-      Truth() + "corr_px" + dnw, Truth() + "corr_py" + dnw, Truth() + "corr_pz" + dnw,
-      "MCParticles.mass", "MCParticles.PDG", "MCParticles.generatorStatus", "MCParticles.charge"
-    }, "MCParticles.generatorStatus>0 && MCParticles.generatorStatus!=4");
-    
-    injector.CreateUnifiedVectors();
-    util::CountParticles(this, Truth());
-    
-    if (isEnd) { }
-} 
-
-    // inline void ePICReaction::SetupTruth(Bool_t isEnd) {
-    //     AddType(Truth());
-	
-    // 	// 1. DEFINE BEAM COLUMNS (Truth Version)
-    //     DefineBeamComponents(Truth());
-    // 	SetBeamElectronIndex(_idxBeamEle,Truth());
-    // 	SetBeamIonIndex(_idxBeamIon,Truth());
-
-
-    //     rad::ParticleInjector injector(this);
-    //     injector.DefineParticleInfo({"double px", "double py", "double pz", "double m", "int pid", "int genStat", "int charge"});
-	
-    // 	// INJECT BEAMS FIRST
-    // 	std::string bEle = Truth() + consts::BeamEle() + "_src_";
-    //     std::string bIon = Truth() + consts::BeamIon() + "_src_";
-	
-    //      // Electron Beam (Index 0)
-    //     injector.AddSource(Truth(), {
-    //         bEle + consts::NamePx(), bEle + consts::NamePy(), bEle + consts::NamePz(), 
-    //         bEle + consts::NameM(),  bEle + consts::NamePid(), 
-    //         "ROOT::RVecI{4}", "ROOT::RVecI{-1}" // Status 4 (Beam), Charge -1
-    //     });
-
-    //     // Ion Beam (Index 1)
-    //     injector.AddSource(Truth(), {
-    //         bIon + consts::NamePx(), bIon + consts::NamePy(), bIon + consts::NamePz(), 
-    //         bIon + consts::NameM(),  bIon + consts::NamePid(), 
-    //         "ROOT::RVecI{4}", "ROOT::RVecI{1}" // Status 4 (Beam), Charge +1
-    //     });
-	
-    //     // Filter: Status 1 (Stable) 
-    //     injector.AddSource(Truth(), {
-    //       "MCParticles.momentum.x", "MCParticles.momentum.y", "MCParticles.momentum.z",
-    //       "MCParticles.mass", "MCParticles.PDG", "MCParticles.generatorStatus", "MCParticles.charge"
-    //     }, "MCParticles.generatorStatus>0 && MCParticles.generatorStatus!=4"); 
-       
-    //     injector.CreateUnifiedVectors();
-    //     util::CountParticles(this, Truth());
+    inline void ePICReaction::SetupTruth(Bool_t isEnd) {
+        AddType(Truth());
         
-    // 	if (isEnd) {
+        DefineBeamComponents(Truth());
+        SetBeamElectronIndex(_idxBeamEle, Truth());
+        SetBeamIonIndex(_idxBeamIon, Truth());
 
-    // 	}
-    // }
+        rad::ParticleInjector injector(this);
+        injector.DefineParticleInfo({"double px", "double py", "double pz", "double m", "int pid", "int genStat", "int charge"});
+        
+        std::string bEle = Truth() + consts::BeamEle() + "_src_";
+        std::string bIon = Truth() + consts::BeamIon() + "_src_";
+        std::string dnw = DoNotWriteTag();
+
+        // *** APPLY AFTERBURNER TO TRUTH BEAMS ***
+        rad::epic::ApplyCrossingAngleCorrection(
+            this, bEle,
+            bEle + consts::NamePx(), bEle + consts::NamePy(), bEle + consts::NamePz(), bEle + consts::NameM(),
+            GetBeamIonP4(), GetBeamElectronP4()
+        );
+
+        rad::epic::ApplyCrossingAngleCorrection(
+            this, bIon,
+            bIon + consts::NamePx(), bIon + consts::NamePy(), bIon + consts::NamePz(), bIon + consts::NameM(),
+            GetBeamIonP4(), GetBeamElectronP4()
+        );
+        
+        // Inject the corrected MC Beams
+        injector.AddSource(Truth(), {
+            bEle + "corr_px" + dnw, bEle + "corr_py" + dnw, bEle + "corr_pz" + dnw, 
+            bEle + consts::NameM(), bEle + consts::NamePid(), 
+            "ROOT::RVecI{4}", "ROOT::RVecI{-1}" 
+        });
+
+        injector.AddSource(Truth(), {
+            bIon + "corr_px" + dnw, bIon + "corr_py" + dnw, bIon + "corr_pz" + dnw, 
+            bIon + consts::NameM(), bIon + consts::NamePid(), 
+            "ROOT::RVecI{4}", "ROOT::RVecI{1}" 
+        });
+        
+        // Apply correction to the rest of the MC Tracks
+        rad::epic::ApplyCrossingAngleCorrection(
+            this, Truth(),
+            "MCParticles.momentum.x", "MCParticles.momentum.y", "MCParticles.momentum.z", "MCParticles.mass",
+            GetBeamIonP4(), GetBeamElectronP4()
+        );
+
+        injector.AddSource(Truth(), {
+          Truth() + "corr_px" + dnw, Truth() + "corr_py" + dnw, Truth() + "corr_pz" + dnw,
+          "MCParticles.mass", "MCParticles.PDG", "MCParticles.generatorStatus", "MCParticles.charge"
+        }, "MCParticles.generatorStatus>0 && MCParticles.generatorStatus!=4");
+        
+        injector.CreateUnifiedVectors();
+        util::CountParticles(this, Truth());
+        
+        if (isEnd) { }
+    }
 
     inline void ePICReaction::SetupMatching(Bool_t isEnd) {
       _truthMatched = true;
