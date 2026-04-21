@@ -115,9 +115,7 @@ namespace rad {
       /** @brief Heuristic matching for Forward Detectors (RP, ZDC). */
       void DefineForwardMatching(const std::string& prefix, int pidToMatch);
       
-      /** @brief Defines [prefix]true_pid column based on [prefix]match_id. */
-      void DefineTruePID(const std::string& prefix);
-      
+        
       const rad::epic::PxPyPzMVector& GetBeamElectronP4() const { return _p4el_beam; }
       const rad::epic::PxPyPzMVector& GetBeamIonP4() const { return _p4ion_beam; }
       
@@ -144,9 +142,7 @@ namespace rad {
     void RegisterDetector(const std::string& name, const std::string& branch, const std::string& prefix, int id) {
         _detectors[name] = {branch, prefix, id};
     }
-      /** @brief Extracts inner type string from "RVec<T>". Needed for template metaprogramming. */
-      std::string GetElementTypeName(const std::string& colName);
-
+ 
     private:
       /** @brief internal helper to load metadata safely. */
       void InitMetadata(const std::string& filename);
@@ -193,18 +189,7 @@ namespace rad {
         catch (const std::exception& e) { std::cerr << "[ePICReaction] Warning: Failed to load metadata: " << e.what() << std::endl; }
     }
 
-    inline std::string ePICReaction::GetElementTypeName(const std::string& colName) {
-         // Get the full type string (e.g. "ROOT::VecOps::RVec<float>")
-         std::string fullType = ColObjTypeString(colName);
-         
-         // Extract content between < and >
-         auto start = fullType.find('<');
-         auto end   = fullType.rfind('>');
-         if(start != std::string::npos && end != std::string::npos) {
-             return fullType.substr(start + 1, end - start - 1);
-         }
-         return fullType; // Fallback (shouldn't happen for PODIO vectors)
-    }
+  
 
    
     // --- Standard Methods ---
@@ -444,12 +429,12 @@ namespace rad {
                    int rIdx = candIdx[0]; if(rIdx >= (int)recMatchId.size()) return 0;
                    int tIdx = recMatchId[rIdx]; if(tIdx == -1 || tIdx >= (int)rawPdg.size()) return 0;
                    return (std::abs(rawPdg[tIdx]) == targetPid) ? 1 : 0;
-               }, {idxCol, Rec() + "match_id", "MCParticles.PDG"});
+               }, {idxCol, Rec() + consts::NameMatchId(), "MCParticles.PDG"});
     }
 
     inline void ePICReaction::DefineForwardMatching(const std::string& prefix, int pidToMatch) {
         // Heuristic: Match simply by PID for forward detectors where associations might be missing
-        Define(prefix + "match_id" + DoNotWriteTag(), 
+        Define(prefix + consts::NameMatchId() + DoNotWriteTag(), 
             [pidToMatch](const Indices_t& pdg, const Indices_t& stat, const Indices_t& id_vec) {
                 int best_idx = -1;
                 for(size_t i=0; i<pdg.size(); ++i) { if(std::abs(pdg[i]) == pidToMatch && stat[i] == 1) { best_idx = i; break; } }
@@ -457,17 +442,7 @@ namespace rad {
             }, {"MCParticles.PDG", "MCParticles.generatorStatus", prefix + "det_id" + DoNotWriteTag()});
     }
 
-    inline void ePICReaction::DefineTruePID(const std::string& prefix) {
-      rad::PrintDefinedColumnNames(CurrFrame());
-
-        // Helper to pull Truth PID into the Reconstructed stream for convenience
-        Define(prefix + "true_pid", 
-               [](const Indices_t& match_id, const Indices_t& tru_pdg) {
-                   Indices_t tpid(match_id.size(), 0);
-                   for(UInt_t i=0; i<match_id.size(); ++i) { if(match_id[i] != -1 && match_id[i] < (int)tru_pdg.size()) tpid[i] = tru_pdg[match_id[i]]; }
-                   return tpid;
-              }, {prefix + "match_id", "tru_pid"});
-    }
+   
     inline void ePICReaction::DefineDetectorFlag(const std::string& outName, const std::string& subdetAssocName) {
         
         // The raw simulated indices seen by the subdetector
@@ -537,7 +512,7 @@ namespace rad {
                 
                 return result;
             }, 
-            {Rec() + "match_id", // The unified match ID synced with rec_px
+            {Rec() + consts::NameMatchId(), // The unified match ID synced with rec_px
              subdetSimCol, 
              "MCParticles.generatorStatus", 
              "MCParticles.PDG"}
@@ -546,350 +521,3 @@ namespace rad {
     
   } 
 }
-
-// /**
-//  * @file ePICReaction.h
-//  * @brief Unified Reaction class for ePIC analysis (Physics + Detector).
-//  */
-
-// #pragma once
-
-// #include "ElectroIonReaction.h"
-// #include "ParticleInjector.h"
-// #include "ePICSource.h" 
-// #include "ReactionUtilities.h"
-// #include "PodioMetadata.h"
-// #include "PodioAssociation.h"
-// #include <TChain.h>
-// #include <memory>
-
-// namespace rad {
-//   namespace epic {
-    
-//     using rad::consts::data_type::Rec;
-//     using rad::consts::data_type::Truth;
-//     using rad::Indices_t; 
-//     using ROOT::RVecU;
-
-//     /**
-//      * @class ePICReaction
-//      * @brief High-level management of ePIC-specific data processing.
-//      * @details
-//      * Merges physics object reconstruction (Tracks/Beams) with detector-level 
-//      * association logic (Clusters/Hits).
-//      */
-//     class ePICReaction : public ElectroIonReaction {
-//     public:
-//       /** * @brief Constructor for globbed filenames. */
-//       ePICReaction(const std::string_view treeName, const std::string_view fileNameGlob, const ROOT::RDF::ColumnNames_t& columns ={} );
-      
-//       /** * @brief Constructor for a vector of filenames. */
-//       ePICReaction(const std::string_view treeName, const ROOT::RVec<std::string>& filenames, const ROOT::RDF::ColumnNames_t& columns ={} );
-      
-//       /** * @brief Constructor for existing RDataFrame (No Metadata support). */
-//       ePICReaction(ROOT::RDataFrame rdf);
-
-//       // =================================================================================
-//       // Setup Methods
-//       // =================================================================================
-
-//       void SetupReconstructed(Bool_t isEnd = kTRUE);
-//       void SetupTruth(Bool_t isEnd = kTRUE);
-//       void SetupMatching(Bool_t isEnd = kTRUE);
-      
-//       // =================================================================================
-//       // Detector Association API
-//       // =================================================================================
-
-//       /**
-//        * @brief Creates a unified column linking Rec Particles to Detector Objects.
-//        * @details 
-//        * Creates a column named `[prefix]_[objName]_[member]` (e.g. "rec_cluster_energy").
-//        * The output is of type `RVec<RVec<T>>` (One-to-Many).
-//        * * @param objName The object name (e.g. "clusters").
-//        * @param collectionNames List of valid PODIO collection names (e.g. "EcalBarrelClusters").
-//        * @param memberName The leaf to extract (e.g. "energy").
-//        */
-//       void DefineAssociation(const std::string& objName, 
-//                              const ROOT::RVec<std::string>& collectionNames, 
-//                              const std::string& memberName);
-
-//       /**
-//        * @brief Projects a One-To-Many association into a One-To-One column.
-//        * @details Creates a flat column aligned with the track list (e.g. "rec_cal_energy").
-//        * * @param outName The name of the new column.
-//        * @param inputAssociation The existing One-To-Many column (e.g. "rec_cluster_energy").
-//        * @param funcName The reducer function (e.g. "rad::helpers::First").
-//        */
-//       void DefineProjection(const std::string& outName, 
-//                             const std::string& inputAssociation, 
-//                             const std::string& funcName);
-
-//       // =================================================================================
-//       // Functional Methods
-//       // =================================================================================
-
-//       void SetBeamsFromMC(UInt_t ielIdx, UInt_t iionIdx, Long64_t nRows = 100);
-//       void MatchCandidateToTruth(const std::string& candidateName, int targetPid);
-
-//       // --- Helpers ---
-//       void DefineForwardMatching(const std::string& prefix, int pidToMatch);
-//       void DefineTruePID(const std::string& prefix);
-      
-//       const rad::epic::PxPyPzMVector& GetBeamElectronP4() const { return _p4el_beam; }
-//       const rad::epic::PxPyPzMVector& GetBeamIonP4() const { return _p4ion_beam; }
-      
-//       rad::podio::PodioMetadata* GetMetadata() { return _podioMetadata.get(); }
-
-//     private:
-//       void InitMetadata(const std::string& filename);
-
-//       enum DetID { BEAM=0, CENTRAL=1, RP=2, ZDC=3, B0=4 };
-//       bool _truthMatched = false;   
-//       bool _beamsCorrected = false; 
-//       Int_t _idxBeamEle = -1;       
-//       Int_t _idxBeamIon = -1;       
-      
-//       std::shared_ptr<rad::podio::PodioMetadata> _podioMetadata;
-//     }; 
-
-//     // =================================================================================
-//     // IMPLEMENTATION: ePICReaction
-//     // =================================================================================
-
-//     inline ePICReaction::ePICReaction(const std::string_view treeName, const std::string_view fileNameGlob, const ROOT::RDF::ColumnNames_t& columns) 
-//       : ElectroIonReaction{treeName, fileNameGlob, columns} 
-//     {
-//         // Resolve Glob to single file for metadata
-//         TChain chain("podio_metadata"); 
-//         chain.Add(fileNameGlob.data());
-//         if(chain.GetListOfFiles() && chain.GetListOfFiles()->GetEntries() > 0) {
-//             InitMetadata(chain.GetListOfFiles()->At(0)->GetTitle());
-//         }
-//     }
-
-//     inline ePICReaction::ePICReaction(const std::string_view treeName, const ROOT::RVec<std::string>& filenames, const ROOT::RDF::ColumnNames_t& columns) 
-//       : ElectroIonReaction{treeName, filenames, columns} 
-//     {
-//         if(!filenames.empty()) InitMetadata(filenames[0]);
-//     }
-
-//     inline ePICReaction::ePICReaction(ROOT::RDataFrame rdf) 
-//       : ElectroIonReaction{rdf} {} // Metadata remains null
-
-//     inline void ePICReaction::InitMetadata(const std::string& filename) {
-//         try {
-//             _podioMetadata = std::make_shared<rad::podio::PodioMetadata>(filename);
-//         } catch (const std::exception& e) {
-//             std::cerr << "[ePICReaction] Warning: Failed to load metadata: " << e.what() << std::endl;
-//         }
-//     }
-
-//     // --- Association Logic ---
-//     inline void ePICReaction::DefineAssociation(const std::string& objName, 
-//                                                 const ROOT::RVec<std::string>& collectionNames, 
-//                                                 const std::string& memberName) 
-//     {
-//       if(!_podioMetadata) {
-//           throw std::runtime_error("DefineAssociation requires PodioMetadata. Construct ePICReaction with filenames.");
-//       }
-//       if (collectionNames.empty()) return;
-
-//       // 1. Resolve Collection IDs
-//       ROOT::RVec<std::string> validNames;
-//       ROOT::RVecU validIDs;
-      
-//       for(const auto& name : collectionNames) {
-//           if(_podioMetadata->Exists(name)) {
-//               validNames.push_back(name);
-//               validIDs.push_back(_podioMetadata->CollectionIDFor(name));
-//           }
-//       }
-      
-//       if(validNames.empty()) {
-//           std::cerr << "[ePICReaction] Warning: No valid collections found for " << objName << std::endl;
-//           return;
-//       }
-
-//       // 2. Define ID->Index Map (Unified Index)
-//       std::string unifiedIdxName = Rec() + objName + "_unified_idx" + DoNotWriteTag();
-//       std::string assocCollID = "_ReconstructedParticles_" + objName + ".collectionID";
-      
-//       if(!ColumnExists(unifiedIdxName)) {
-//            rad::podio::IdToLocalIndexMap mapper(validIDs);
-//            Define(unifiedIdxName, [mapper](const RVecU& ids){ return mapper(ids); }, {assocCollID});
-//       }
-      
-//       // 3. Prepare Inputs
-//       ROOT::RVec<std::string> leafCols;
-//       for(const auto& name : validNames) leafCols.push_back(name + "." + memberName);
-      
-//       std::string packName = Rec() + objName + "_" + memberName + "_pack" + DoNotWriteTag();
-//       std::string typeName = ColObjTypeString(validNames[0] + "." + memberName); // e.g. "float" or "double"
-      
-//       // Define the "Vector of Vectors" packing column
-//       Define(packName, Form("ROOT::RVec<ROOT::RVec<%s>>{%s}", 
-//              typeName.c_str(), rad::util::combineVectorToString(leafCols).c_str()));
-      
-//       // 4. Define Final Output (One-To-Many)
-//       std::string outputCol = Rec() + objName + "_" + memberName; 
-      
-//       // FIX: Ensure all string concatenations are converted to C-Strings for Form()
-//       Define(outputCol, 
-//              Form("rad::podio::CreateAssociation<%s>(%s, %s, %s, %s, %s)", 
-//                   typeName.c_str(), 
-//                   packName.c_str(), 
-//                   unifiedIdxName.c_str(), 
-//                   ("_ReconstructedParticles_" + objName + ".index").c_str(), 
-//                   ("ReconstructedParticles." + objName + "_begin").c_str(), 
-//                   ("ReconstructedParticles." + objName + "_end").c_str())
-//       );
-//     }
-
-//     inline void ePICReaction::DefineProjection(const std::string& outName, 
-//                                                const std::string& inputAssociation, 
-//                                                const std::string& funcName) 
-//     {
-//       // Generates a JIT loop to apply the reduction defined in funcName
-//       //i.e. converting RVec<RVec<>> to RVec<RVecResultType>
-//       std::string expr = Form(
-//             "rad::RVecResultType result(%s.size()); "
-//             "for(const auto& v : %s) { result.push_back(static_cast<rad::ResultType_t>( %s(v) ) ); } "
-//             "return result;",
-//             inputAssociation.c_str(), 
-//             inputAssociation.c_str(),
-// 	    funcName.c_str()
-//         );
-//         Define(outName, expr);
-//     }
-
-//     // --- Standard Reconstructed/Truth Setup ---
-
-//     inline void ePICReaction::SetupReconstructed(Bool_t isEnd) {
-//         AddType(Rec()); 
-//         rad::ParticleInjector injector(this);
-        
-//         ROOT::RVec<std::string> suffixes = {"double px", "double py", "double pz", "double m", "int pid", "short charge", "int det_id"};
-//         if(_truthMatched) { suffixes.push_back("int match_id"); suffixes.push_back("int true_pid"); }
-//         injector.DefineParticleInfo(suffixes);
-
-//         SetBeamElectronIndex(_idxBeamEle, Rec()); 
-//         SetBeamIonIndex(_idxBeamIon, Rec());
-//         DefineBeamComponents(); 
-
-//         using Source = ePICSource<ePICReaction>;
-//         Source central("ReconstructedParticles", "Central_", CENTRAL);
-//         central.SetIsCorrected(true); central.SetMinP(0.3); 
-//         central.Process(this, injector, _truthMatched);
-
-//         Source rp("ForwardRomanPotRecParticles", "rp_", RP);
-//         rp.SetTargetPID(2212); rp.SetMinP(1);
-//         rp.Process(this, injector, _truthMatched);
-
-//         Source zdc("ReconstructedFarForwardZDCNeutrons", "ZDC_", ZDC);
-//         zdc.SetTargetPID(2112); zdc.SetIsCorrected(true); zdc.SetMinP(1);
-//         zdc.Process(this, injector, _truthMatched);
-
-//         injector.CreateUnifiedVectors();
-//         util::CountParticles(this, Rec());
-//         if (isEnd) { DefineBeamElectron(); DefineBeamIon(); }
-//     }
-
-//     inline void ePICReaction::SetupTruth(Bool_t isEnd) {
-//         AddType(Truth());
-//         SetBeamElectronIndex(_idxBeamEle, Truth()); 
-//         SetBeamIonIndex(_idxBeamIon, Truth());
-
-//         rad::ParticleInjector injector(this);
-//         injector.DefineParticleInfo({"double px", "double py", "double pz", "double m", "int pid", "int genStat", "int charge"});
-
-//         injector.AddSource(Truth(), {
-//           "MCParticles.momentum.x", "MCParticles.momentum.y", "MCParticles.momentum.z",
-//           "MCParticles.mass", "MCParticles.PDG", "MCParticles.generatorStatus", "MCParticles.charge"
-//         }, "MCParticles.generatorStatus==1||MCParticles.generatorStatus==4"); 
-
-//         injector.CreateUnifiedVectors();
-//         util::CountParticles(this, Truth());
-//         if (isEnd) { DefineBeamElectron(); DefineBeamIon(); }
-//     }
-
-//     inline void ePICReaction::SetupMatching(Bool_t isEnd) {
-//         _truthMatched = true;
-//         Define("Central_match_id" + DoNotWriteTag(), 
-//             [](const ROOT::RVecU& recID, const ROOT::RVecU& simID, const Indices_t& rec_ind) {
-//                 Indices_t match_id(rec_ind.size(), -1);
-//                 for(size_t i = 0; i < recID.size(); ++i) {
-//                     if(recID[i] < (uint)match_id.size()) match_id[recID[i]] = (int)simID[i];
-//                 }
-//                 return match_id;
-//             }, 
-//             {"ReconstructedParticleAssociations.recID", "ReconstructedParticleAssociations.simID", "ReconstructedParticles.PDG"}
-//         );
-//         SetupReconstructed(kFALSE);
-//         SetupTruth(kFALSE);
-//     }
-
-//     inline void ePICReaction::SetBeamsFromMC(UInt_t iel, UInt_t iion, Long64_t nRows) {
-//         _useBeamsFromMC = true;
-//         _idxBeamEle = iel; _idxBeamIon = iion;
-//         auto nthreads = ROOT::GetThreadPoolSize();
-//         if (nthreads) ROOT::DisableImplicitMT();
-
-//         auto tempframe = GetFileNames().empty() ? ROOT::RDataFrame{GetTreeName(), GetFileName()} : ROOT::RDataFrame{GetTreeName(), GetFileNames()};
-//         auto beamdf = tempframe.Range(nRows)
-//             .Define("emean", Form("MCParticles.momentum.z[%d]", iel))
-//             .Define("pzmean", Form("MCParticles.momentum.z[%d]", iion))
-//             .Define("pxmean", Form("MCParticles.momentum.x[%d]", iion));
-          
-//         auto pze = beamdf.Mean("emean");
-//         auto pzp = beamdf.Mean("pzmean");
-//         auto pxp = beamdf.Mean("pxmean");
-
-//         _p4el_beam.SetPxPyPzE(0, 0, *pze, std::abs(*pze));
-//         _p4ion_beam.SetPxPyPzE(*pxp, 0, *pzp, std::sqrt(*pxp * *pxp + *pzp * *pzp + 0.938*0.938));
-    
-//         std::cout << " [ePICReaction] Beams Initialized: Ele=" << _p4el_beam.Pz() << " GeV, Ion=" << _p4ion_beam.Pz() << " GeV" << std::endl;
-//         if (nthreads) ROOT::EnableImplicitMT(nthreads);
-//     }
-
-//     inline void ePICReaction::MatchCandidateToTruth(const std::string& candidateName, int targetPid) {
-//         std::string idxCol = candidateName + "_idx";
-//         Define(candidateName + "_is_true", 
-//                [targetPid](const Indices_t& candIdx, const Indices_t& recMatchId, const Indices_t& rawPdg) {
-//                    if(candIdx.empty() || candIdx[0] == -1) return 0;
-//                    int rIdx = candIdx[0];
-//                    if(rIdx >= (int)recMatchId.size()) return 0;
-//                    int tIdx = recMatchId[rIdx];
-//                    if(tIdx == -1 || tIdx >= (int)rawPdg.size()) return 0;
-//                    return (std::abs(rawPdg[tIdx]) == targetPid) ? 1 : 0;
-//                }, 
-//                {idxCol, Rec() + "match_id", "MCParticles.PDG"});
-//     }
-
-//     inline void ePICReaction::DefineForwardMatching(const std::string& prefix, int pidToMatch) {
-//         Define(prefix + "match_id" + DoNotWriteTag(), 
-//             [pidToMatch](const Indices_t& pdg, const Indices_t& stat, const Indices_t& id_vec) {
-//                 int best_idx = -1;
-//                 for(size_t i=0; i<pdg.size(); ++i) {
-//                     if(std::abs(pdg[i]) == pidToMatch && stat[i] == 1) {
-//                         best_idx = i; break; 
-//                     }
-//                 }
-//                 auto result = Indices_t(id_vec.size(), best_idx);
-//                 return result;
-//             }, {"MCParticles.PDG", "MCParticles.generatorStatus", prefix + "det_id" + DoNotWriteTag()});
-//     }
-
-//     inline void ePICReaction::DefineTruePID(const std::string& prefix) {
-//         Define(prefix + "true_pid" + DoNotWriteTag(), 
-//                [](const Indices_t& match_id, const Indices_t& tru_pdg) {
-//                    Indices_t tpid(match_id.size(), 0);
-//                    for(size_t i=0; i<(int)match_id.size(); ++i) {
-//                        if(match_id[i] != -1 && match_id[i] < (int)tru_pdg.size()) tpid[i] = tru_pdg[match_id[i]];
-//                    }
-//                    return tpid;
-//                }, {prefix + "match_id" + DoNotWriteTag(), "MCParticles.PDG"});
-//     }
-
-//   } // namespace epic
-// } // namespace rad
