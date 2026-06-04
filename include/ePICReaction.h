@@ -22,7 +22,7 @@ namespace rad {
     using rad::consts::data_type::Truth;
     using rad::Indices_t; 
     using ROOT::RVecU;
-    enum DetID { BEAM=0, CENTRAL=1, RP=2, ZDC=3, B0=4 };
+    enum DetID { BEAM=0, CENTRAL=1, RP=2, ZDC=3, B0=4, Lambda=5 };
  
     /**
      * @class ePICReaction
@@ -266,7 +266,8 @@ namespace rad {
         RegisterDetector("Central", "ReconstructedParticles", "Central_", CENTRAL);
         RegisterDetector("RP", "ForwardRomanPotRecParticles", "rp_", RP);
         RegisterDetector("ZDC", "ReconstructedFarForwardZDCNeutrons", "ZDC_", ZDC);
-
+	RegisterDetector("Lambdas", "ReconstructedFarForwardLambdas", "Lambdas_", Lambda);
+	
         // 5. Inject Detectors via ePICSource Factory
         using Source = ePICSource<ePICReaction>;
         
@@ -286,6 +287,12 @@ namespace rad {
         zdc.SetMinP(1); 
         zdc.Process(this, injector, _truthMatched);
 
+	Source lambda(_detectors.at("Lambdas").branch, _detectors.at("Lambdas").prefix, _detectors.at("Lambdas").id);
+        lambda.SetTargetPID(3122); 
+        //lambda.SetIsCorrected(true); 
+        lambda.SetMinP(1); 
+        lambda.Process(this, injector, _truthMatched);
+	
         // 6. Finalize Structure of Arrays
         injector.CreateUnifiedVectors();
         
