@@ -27,7 +27,7 @@ namespace rad {
       using momeType_t = Tp;
       using massType_t = Tm;
 
-      UndoAfterBurn(PxPyPzMVector p_beam, PxPyPzMVector e_beam, Float_t angle = -0.025);
+      UndoAfterBurn(PxPyPzMVector p_beam, PxPyPzMVector e_beam, Float_t angle = -0.025, Float_t vert_angle = 1e-4);
 
       // Single particle operator
       PxPyPzEVector operator()(Tp px, Tp py, Tp pz, Tm m) const;
@@ -37,9 +37,11 @@ namespace rad {
 
     protected:
       double _crossAngle;
+      double _vertAngle;
       ROOT::Math::Boost _vBoostToCoM;
       ROOT::Math::Boost _vBoostToHoF;
       RotationY _rotY;
+      RotationX _rotX;
       
       void RotsAndBoosts(PxPyPzMVector p_beam, PxPyPzMVector e_beam);
     };
@@ -49,8 +51,8 @@ namespace rad {
     // =================================================================================
 
     template<typename Tp, typename Tm>
-    UndoAfterBurn<Tp,Tm>::UndoAfterBurn(PxPyPzMVector p_beam, PxPyPzMVector e_beam, Float_t angle)
-        : _crossAngle{angle} 
+    UndoAfterBurn<Tp,Tm>::UndoAfterBurn(PxPyPzMVector p_beam, PxPyPzMVector e_beam, Float_t angle, Float_t vert_angle)
+      : _crossAngle{angle}, _vertAngle{vert_angle}
     {
         RotsAndBoosts(p_beam, e_beam);
     }
@@ -60,7 +62,7 @@ namespace rad {
         auto p_beam_mod = p_beam;
         auto e_beam_mod = e_beam;
 
-        p_beam_mod.SetCoordinates(_crossAngle * p_beam.E(), 0., p_beam.E(), p_beam.M());
+        p_beam_mod.SetCoordinates(_crossAngle * p_beam.E(), _vertAngle * p_beam.E(), p_beam.E(), p_beam.M());
         e_beam_mod.SetCoordinates(0., 0., -e_beam.E(), e_beam.M());
 
         auto CoM_boost = p_beam_mod + e_beam_mod;
@@ -71,6 +73,9 @@ namespace rad {
         
         auto rotY = -1.0 * std::atan2(p_beam_mod.X(), p_beam_mod.Z());
         _rotY = RotationY(rotY);
+
+	auto rotX = 1.0 * std::atan2(p_beam_mod.Y(), p_beam_mod.Z());
+        _rotX = RotationX(rotX);
 
         PxPyPzEVector HoF_boost(0., 0., CoM_boost.Z(), CoM_boost.E());
         _vBoostToHoF = ROOT::Math::Boost(-HoF_boost.BoostToCM());
@@ -83,7 +88,8 @@ namespace rad {
         
         vec = _vBoostToCoM(vec);
         vec = _rotY(vec);
-        vec = _vBoostToHoF(vec);
+	vec = _rotX(vec);
+	vec = _vBoostToHoF(vec);
         
         return vec;
     }
